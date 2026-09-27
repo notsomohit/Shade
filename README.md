@@ -18,7 +18,7 @@ npm install
 cp .env.example .env
 
 # 3. Run both client + server in dev mode
-npm run dev:client   # → http://localhost:3000
+npm run dev:client   # → http://localhost:3000 (or 3001 if port in use)
 npm run dev:server   # → http://localhost:4000
 ```
 
@@ -26,20 +26,28 @@ npm run dev:server   # → http://localhost:4000
 
 ```
 studioNorth/
-├── client/          # Next.js frontend
-│   └── src/app/     # App Router pages
-├── server/          # Express API backend
-│   └── src/         # Server source
-├── .env.example     # Environment template
+├── client/src/
+│   ├── app/
+│   │   ├── editor/          # Editor page route (/editor)
+│   │   ├── globals.css      # Styling & theme
+│   │   ├── layout.tsx       # Root layout
+│   │   └── page.tsx         # Home landing page
+│   ├── components/
+│   │   ├── EditorCanvas.tsx # Canvas display & toolbar
+│   │   └── ImageUploader.tsx# Drag-and-drop / file picker zone
+│   └── hooks/
+│       └── useCanvas.ts     # Canvas initialization & drawing hook
+├── server/src/              # Express API backend
+├── .env.example             # Environment template
 ├── .gitignore
-├── package.json     # Root workspace config
+├── package.json             # Root workspace config
 └── README.md
 ```
 
 ## Development Phases
 
 - [x] Phase 0 — Project setup
-- [ ] Phase 1 — Image upload + canvas render
+- [x] Phase 1 — Image upload + canvas render
 - [ ] Phase 2 — Core adjustments (brightness, contrast, etc.)
 - [ ] Phase 3 — Crop + transform
 - [ ] Phase 4 — Filters
