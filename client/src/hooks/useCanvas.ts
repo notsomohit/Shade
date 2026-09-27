@@ -176,11 +176,11 @@ export function useCanvas() {
       const imageData = adjCtx.getImageData(0, 0, cropW, cropH);
       const data = imageData.data;
 
-      const brightnessOffset = Math.round((adj.brightness / 100) * 255);
-      const contrastFactor =
-        (259 * (adj.contrast * 2.55 + 255)) / (255 * (259 - adj.contrast * 2.55));
-      const exposureFactor = Math.pow(2, adj.exposure / 50);
-      const satMult = (adj.saturation + 100) / 100;
+      // Scaled perceptual offsets and multipliers for smooth, natural editing
+      const brightnessOffset = Math.round((adj.brightness / 100) * 60);
+      const contrastFactor = 1 + (adj.contrast / 100) * 0.65;
+      const exposureFactor = Math.pow(2, (adj.exposure / 100) * 0.6);
+      const satMult = 1 + (adj.saturation / 100) * 0.75;
 
       for (let i = 0; i < data.length; i += 4) {
         let r = data[i];

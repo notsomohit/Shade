@@ -1,7 +1,7 @@
 "use client";
 
 import { RefObject, useState, useCallback, useRef, useEffect, memo } from "react";
-import { ToolType, LayerItem, TextOverlay, ImageMetaData } from "@/types/editor";
+import { ToolType, LayerItem, TextOverlay, ImageMetaData, Adjustments } from "@/types/editor";
 
 interface CenterCanvasProps {
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -13,6 +13,7 @@ interface CenterCanvasProps {
   compareMode: boolean;
   layers: LayerItem[];
   selectedLayerId: string | null;
+  adjustments: Adjustments;
   onSelectLayer: (id: string | null) => void;
   onUpdateTextPosition: (id: string, x: number, y: number) => void;
   onUpdateTextFontSize: (id: string, fontSize: number) => void;
@@ -35,6 +36,7 @@ const CenterCanvas = memo(function CenterCanvas({
   compareMode,
   layers,
   selectedLayerId,
+  adjustments,
   onSelectLayer,
   onUpdateTextPosition,
   onUpdateTextFontSize,
@@ -44,6 +46,9 @@ const CenterCanvas = memo(function CenterCanvas({
   onApplyCrop,
   renderPipeline,
 }: CenterCanvasProps) {
+  // Track if a pointer-down on a text layer just happened so the main
+  // deselect handler (also on mousedown) knows to skip deselecting.
+  const textInteractingRef = useRef(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
   const [dividerPercent, setDividerPercent] = useState<number>(50);
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
@@ -115,6 +120,9 @@ const CenterCanvas = memo(function CenterCanvas({
     e: React.MouseEvent | React.TouchEvent,
     textItem: TextOverlay
   ) => {
+    // Mark that interaction is with a text layer so the main onMouseDown
+    // deselect handler does not clear the selection.
+    textInteractingRef.current = true;
     e.stopPropagation();
     onSelectLayer(textItem.id);
     setDraggingTextId(textItem.id);
@@ -267,10 +275,38 @@ const CenterCanvas = memo(function CenterCanvas({
 
   const textLayers = layers.filter((l) => l.type === "text" && l.textData && l.visible);
 
+  // Build CSS filter string for live preview during slider drag.
+  // This is cheap (GPU compositing) and gives instant feedback.
+  const cssAdjustFilter = [
+    adjustments.brightness !== 0
+      ? `brightness(${1 + (adjustments.brightness / 100) * 0.4})`
+      : "",
+    adjustments.contrast !== 0
+      ? `contrast(${1 + (adjustments.contrast / 100) * 0.6})`
+      : "",
+    adjustments.saturation !== 0
+      ? `saturate(${1 + (adjustments.saturation / 100) * 0.75})`
+      : "",
+    adjustments.exposure !== 0
+      ? `brightness(${Math.pow(2, (adjustments.exposure / 100) * 0.5).toFixed(3)})`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <main
       className="flex-1 bg-[#0a0a0c] relative overflow-hidden flex flex-col items-center justify-between p-6 select-none"
-      onClick={() => onSelectLayer(null)}
+      onMouseDown={(e) => {
+        // Only deselect when clicking directly on the canvas backdrop,
+        // not when the event bubbled from a text layer (stopPropagation handles
+        // that, but we also guard with the ref for extra safety).
+        if (textInteractingRef.current) {
+          textInteractingRef.current = false;
+          return;
+        }
+        onSelectLayer(null);
+      }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -454,7 +490,13 @@ const CenterCanvas = memo(function CenterCanvas({
               transform: `scale(${zoomScale})`,
             }}
           >
-            <canvas ref={canvasRef} className="block w-full h-full object-contain" />
+            {/* CSS filter applied here for zero-cost live preview during slider drag.
+                The actual pixel-accurate render happens debounced in useCanvas. */}
+            <canvas
+              ref={canvasRef}
+              className="block w-full h-full object-contain"
+              style={{ filter: cssAdjustFilter || undefined }}
+            />
 
             {/* Freely Draggable Interactive Text Overlay Triggers */}
             {textLayers.map((layer) => {

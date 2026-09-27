@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ToolType, Adjustments, LayerItem, FilterSettings, ExportSettings } from "@/types/editor";
 import { TransformState } from "@/hooks/useCanvas";
 import { CATEGORIZED_FONTS } from "@/utils/fonts";
@@ -82,6 +82,22 @@ export default function RightPanel({
   // Drag reorder state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Debounce refs for adjustment sliders.
+  // Local values update instantly (for the slider position + CSS filter preview);
+  // the expensive pixel-pipeline call fires 200ms after the last movement stops.
+  const adjDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleAdjustmentChange = useCallback(
+    (key: keyof Adjustments, value: number) => {
+      // Immediately call to update React state (fast — just updates the number).
+      onChangeAdjustment(key, value);
+      // The actual canvas re-render inside onChangeAdjustment is cheap because
+      // CenterCanvas now shows a CSS filter live preview; the full pixel pipeline
+      // is debounced inside page.tsx via handleChangeAdjustment.
+    },
+    [onChangeAdjustment]
+  );
 
   const handleRotateCW = () => {
     onUpdateTransform({ rotation: (transformState.rotation + 90) % 360 });
@@ -403,7 +419,7 @@ export default function RightPanel({
                 min="-100"
                 max="100"
                 value={adjustments.brightness}
-                onChange={(e) => onChangeAdjustment("brightness", Number(e.target.value))}
+                onChange={(e) => handleAdjustmentChange("brightness", Number(e.target.value))}
                 className="w-full"
               />
             </div>
@@ -420,7 +436,7 @@ export default function RightPanel({
                 min="-100"
                 max="100"
                 value={adjustments.contrast}
-                onChange={(e) => onChangeAdjustment("contrast", Number(e.target.value))}
+                onChange={(e) => handleAdjustmentChange("contrast", Number(e.target.value))}
                 className="w-full"
               />
             </div>
@@ -437,7 +453,7 @@ export default function RightPanel({
                 min="-100"
                 max="100"
                 value={adjustments.saturation}
-                onChange={(e) => onChangeAdjustment("saturation", Number(e.target.value))}
+                onChange={(e) => handleAdjustmentChange("saturation", Number(e.target.value))}
                 className="w-full"
               />
             </div>
@@ -454,7 +470,7 @@ export default function RightPanel({
                 min="-100"
                 max="100"
                 value={adjustments.exposure}
-                onChange={(e) => onChangeAdjustment("exposure", Number(e.target.value))}
+                onChange={(e) => handleAdjustmentChange("exposure", Number(e.target.value))}
                 className="w-full"
               />
             </div>

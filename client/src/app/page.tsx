@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useCanvas } from "@/hooks/useCanvas";
 import {
   ToolType,
@@ -105,11 +105,19 @@ export default function Home() {
     }
   }, [historyIndex, history, updateAdjustments, updateFilter]);
 
+  // Debounce ref — state updates instantly, expensive pixel pipeline waits 200ms.
+  const adjDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleChangeAdjustment = (key: keyof Adjustments, value: number) => {
     const updated = { ...adjustments, [key]: value };
+    // Instantly update React state → slider tracks position + CSS filter preview updates.
     setAdjustments(updated);
-    updateAdjustments(updated);
-    pushHistory(updated, filterSettings);
+    // Debounce the heavy pixel-level canvas re-render.
+    if (adjDebounceRef.current) clearTimeout(adjDebounceRef.current);
+    adjDebounceRef.current = setTimeout(() => {
+      updateAdjustments(updated);
+      pushHistory(updated, filterSettings);
+    }, 200);
   };
 
   const handleChangeFilter = (newFilter: FilterSettings) => {
@@ -417,6 +425,7 @@ export default function Home() {
             compareMode={compareMode}
             layers={layers}
             selectedLayerId={selectedLayerId}
+            adjustments={adjustments}
             onSelectLayer={handleSelectLayer}
             onUpdateTextPosition={handleUpdateTextPosition}
             onUpdateTextFontSize={handleUpdateTextFontSize}
