@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useCanvas } from "@/hooks/useCanvas";
-import { ToolType, Adjustments, LayerItem, ImageMetaData, TextOverlay } from "@/types/editor";
+import {
+  ToolType,
+  Adjustments,
+  LayerItem,
+  ImageMetaData,
+  TextOverlay,
+  GridMode,
+  FilterSettings,
+  ExportSettings,
+} from "@/types/editor";
 import TopBar from "@/components/TopBar";
 import LeftToolbar from "@/components/LeftToolbar";
 import CenterCanvas from "@/components/CenterCanvas";
-import FilterPresetsStrip from "@/components/FilterPresetsStrip";
+import FilterPresetsStrip, { PRESET_FILTERS } from "@/components/FilterPresetsStrip";
 import RightPanel from "@/components/RightPanel";
 import BottomBar from "@/components/BottomBar";
 
@@ -23,8 +32,11 @@ export default function Home() {
     beforeCanvasRef,
     loadImage,
     updateAdjustments,
+    updateFilter,
     updateTransform,
+    updateGridMode,
     updateLayers,
+    exportImage,
     transformState,
     renderPipeline,
   } = useCanvas();
@@ -32,22 +44,37 @@ export default function Home() {
   const [activeTool, setActiveTool] = useState<ToolType>("select");
   const [zoom, setZoom] = useState<number>(100);
   const [compareMode, setCompareMode] = useState<boolean>(false);
+  const [gridMode, setGridMode] = useState<GridMode>("none");
   const [selectedPresetId, setSelectedPresetId] = useState<string>("original");
+
+  const [filterSettings, setFilterSettings] = useState<FilterSettings>({
+    id: "original",
+    name: "Original",
+    intensity: 100,
+  });
+
+  const [exportSettings, setExportSettings] = useState<ExportSettings>({
+    format: "image/png",
+    quality: 0.9,
+  });
+
   const [imageData, setImageData] = useState<ImageMetaData | null>(null);
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
 
   // Adjustments & History Stack
   const [adjustments, setAdjustments] = useState<Adjustments>(INITIAL_ADJUSTMENTS);
-  const [history, setHistory] = useState<Adjustments[]>([INITIAL_ADJUSTMENTS]);
+  const [history, setHistory] = useState<{ adjustments: Adjustments; filter: FilterSettings }[]>([
+    { adjustments: INITIAL_ADJUSTMENTS, filter: { id: "original", name: "Original", intensity: 100 } },
+  ]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
-  const pushHistory = (newAdj: Adjustments) => {
+  const pushHistory = (newAdj: Adjustments, newFilt: FilterSettings) => {
     const nextHistory = history.slice(0, historyIndex + 1);
-    nextHistory.push(newAdj);
+    nextHistory.push({ adjustments: newAdj, filter: newFilt });
     setHistory(nextHistory);
     setHistoryIndex(nextHistory.length - 1);
   };
@@ -56,34 +83,72 @@ export default function Home() {
     if (historyIndex > 0) {
       const prevIndex = historyIndex - 1;
       setHistoryIndex(prevIndex);
-      const targetAdj = history[prevIndex];
-      setAdjustments(targetAdj);
-      updateAdjustments(targetAdj);
+      const targetState = history[prevIndex];
+      setAdjustments(targetState.adjustments);
+      updateAdjustments(targetState.adjustments);
+      setFilterSettings(targetState.filter);
+      updateFilter(targetState.filter);
+      setSelectedPresetId(targetState.filter.id);
     }
-  }, [historyIndex, history, updateAdjustments]);
+  }, [historyIndex, history, updateAdjustments, updateFilter]);
 
   const handleRedo = useCallback(() => {
     if (historyIndex < history.length - 1) {
       const nextIndex = historyIndex + 1;
       setHistoryIndex(nextIndex);
-      const targetAdj = history[nextIndex];
-      setAdjustments(targetAdj);
-      updateAdjustments(targetAdj);
+      const targetState = history[nextIndex];
+      setAdjustments(targetState.adjustments);
+      updateAdjustments(targetState.adjustments);
+      setFilterSettings(targetState.filter);
+      updateFilter(targetState.filter);
+      setSelectedPresetId(targetState.filter.id);
     }
-  }, [historyIndex, history, updateAdjustments]);
+  }, [historyIndex, history, updateAdjustments, updateFilter]);
+
+  // Debounce ref — state updates instantly, expensive pixel pipeline waits 200ms.
+  const adjDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleChangeAdjustment = (key: keyof Adjustments, value: number) => {
     const updated = { ...adjustments, [key]: value };
+    // Instantly update React state → slider tracks position + CSS filter preview updates.
     setAdjustments(updated);
-    updateAdjustments(updated);
-    pushHistory(updated);
+    // Debounce the heavy pixel-level canvas re-render.
+    if (adjDebounceRef.current) clearTimeout(adjDebounceRef.current);
+    adjDebounceRef.current = setTimeout(() => {
+      updateAdjustments(updated);
+      pushHistory(updated, filterSettings);
+    }, 200);
+  };
+
+  const handleChangeFilter = (newFilter: FilterSettings) => {
+    setFilterSettings(newFilter);
+    updateFilter(newFilter);
+    pushHistory(adjustments, newFilter);
+  };
+
+  const handleSelectPreset = (id: string) => {
+    setSelectedPresetId(id);
+    const found = PRESET_FILTERS.find((p) => p.id === id);
+    const newFilter: FilterSettings = {
+      id,
+      name: found ? found.name : "Custom",
+      intensity: 100,
+    };
+    setFilterSettings(newFilter);
+    updateFilter(newFilter);
+    pushHistory(adjustments, newFilter);
   };
 
   const handleApplyCrop = (crop: { x: number; y: number; width: number; height: number }) => {
     updateTransform({ crop });
   };
 
-  // Layer Reordering (Top of list = Rendered on top)
+  const handleToggleGrid = () => {
+    const nextMode: GridMode = gridMode === "none" ? "grid" : gridMode === "grid" ? "thirds" : "none";
+    setGridMode(nextMode);
+    updateGridMode(nextMode);
+  };
+
   const handleReorderLayers = useCallback(
     (newLayers: LayerItem[]) => {
       setLayers(newLayers);
@@ -92,16 +157,35 @@ export default function Home() {
     [updateLayers]
   );
 
-  // Add text layer directly to TOP of stack (Index 0)
-  const handleAddTextLayer = (text: string, fontSize: number, color: string) => {
+  const handleDeleteLayer = useCallback(
+    (id: string) => {
+      setLayers((prev) => {
+        const nextLayers = prev.filter((l) => l.id !== id);
+        updateLayers(nextLayers);
+        return nextLayers;
+      });
+      if (selectedLayerId === id) setSelectedLayerId(null);
+    },
+    [selectedLayerId, updateLayers]
+  );
+
+  const handleAddTextLayer = (
+    text: string,
+    fontSize: number,
+    color: string,
+    fontFamily: string,
+    category: "standard" | "design" | "artsy" | "display"
+  ) => {
     const id = `text-${Date.now()}`;
     const newOverlay: TextOverlay = {
       id,
       text,
       fontSize,
+      fontFamily,
+      fontCategory: category,
       color,
-      x: 0.1, // 10% from left
-      y: 0.15 + layers.length * 0.08, // vertical stagger
+      x: 0.1,
+      y: 0.15 + layers.length * 0.08,
       visible: true,
     };
 
@@ -113,14 +197,12 @@ export default function Home() {
       textData: newOverlay,
     };
 
-    // Insert at TOP of stack (index 0)
     const nextLayers = [newLayerItem, ...layers];
     setLayers(nextLayers);
     updateLayers(nextLayers);
     setSelectedLayerId(id);
   };
 
-  // Update text position on drag
   const handleUpdateTextPosition = useCallback(
     (id: string, x: number, y: number) => {
       setLayers((prev) => {
@@ -140,10 +222,68 @@ export default function Home() {
     [updateLayers]
   );
 
-  // Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Tool Hotkeys)
+  // Resize text font size from corner anchor handles
+  const handleUpdateTextFontSize = useCallback(
+    (id: string, fontSize: number) => {
+      setLayers((prev) => {
+        const nextLayers = prev.map((layer) => {
+          if (layer.id === id && layer.textData) {
+            return {
+              ...layer,
+              textData: { ...layer.textData, fontSize },
+            };
+          }
+          return layer;
+        });
+        updateLayers(nextLayers);
+        return nextLayers;
+      });
+    },
+    [updateLayers]
+  );
+
+  const handleSelectLayer = useCallback(
+    (id: string | null) => {
+      setSelectedLayerId(id);
+      if (id) {
+        setLayers((currentLayers) => {
+          const target = currentLayers.find((l) => l.id === id);
+          if (target && target.type === "text") {
+            setActiveTool("text");
+          }
+          return currentLayers;
+        });
+      }
+    },
+    []
+  );
+
+  // Update text layer properties (font, size, color, text)
+  const handleUpdateTextLayer = useCallback(
+    (id: string, updates: Partial<TextOverlay>) => {
+      setLayers((prev) => {
+        const nextLayers = prev.map((layer) => {
+          if (layer.id === id && layer.textData) {
+            const newTextData = { ...layer.textData, ...updates };
+            return {
+              ...layer,
+              name: updates.text ? `Text: ${updates.text}` : layer.name,
+              textData: newTextData,
+            };
+          }
+          return layer;
+        });
+        updateLayers(nextLayers);
+        return nextLayers;
+      });
+    },
+    [updateLayers]
+  );
+
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -155,6 +295,10 @@ export default function Home() {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
         e.preventDefault();
         handleRedo();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedLayerId && selectedLayerId !== "layer-0") {
+          handleDeleteLayer(selectedLayerId);
+        }
       } else if (!e.ctrlKey && !e.metaKey) {
         switch (e.key.toLowerCase()) {
           case "v":
@@ -175,13 +319,16 @@ export default function Home() {
           case "l":
             setActiveTool("layers");
             break;
+          case "e":
+            setActiveTool("export");
+            break;
         }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, selectedLayerId, handleDeleteLayer]);
 
   const handleImageSelect = useCallback(
     async (file: File) => {
@@ -195,10 +342,11 @@ export default function Home() {
         };
         setImageData(meta);
         setAdjustments(INITIAL_ADJUSTMENTS);
-        setHistory([INITIAL_ADJUSTMENTS]);
+        setHistory([
+          { adjustments: INITIAL_ADJUSTMENTS, filter: { id: "original", name: "Original", intensity: 100 } },
+        ]);
         setHistoryIndex(0);
 
-        // Base background image layer
         const baseLayer: LayerItem = {
           id: "layer-0",
           name: file.name,
@@ -227,15 +375,17 @@ export default function Home() {
     });
   };
 
-  const handleExport = () => {
-    const canvas = canvasRef.current;
-    if (!canvas || !imageData) {
+  const handleTriggerExport = () => {
+    if (!imageData) {
       alert("No image loaded to export!");
       return;
     }
-    const dataUrl = canvas.toDataURL("image/png");
+    const dataUrl = exportImage(exportSettings.format, exportSettings.quality);
+    if (!dataUrl) return;
+
+    const ext = exportSettings.format.split("/")[1];
     const link = document.createElement("a");
-    link.download = `edited-${imageData.name}`;
+    link.download = `edited-${imageData.name.split(".")[0]}.${ext}`;
     link.href = dataUrl;
     link.click();
   };
@@ -248,7 +398,9 @@ export default function Home() {
         canRedo={canRedo}
         onUndo={handleUndo}
         onRedo={handleRedo}
-        onExport={handleExport}
+        gridMode={gridMode}
+        onToggleGrid={handleToggleGrid}
+        onExport={() => setActiveTool("export")}
         onFileSelect={handleImageSelect}
       />
 
@@ -260,9 +412,9 @@ export default function Home() {
           onSelectTool={(tool) => setActiveTool(tool)}
         />
 
-        {/* Center Workspace (Canvas + Filter Presets Strip) */}
+        {/* Center Workspace */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-          {/* 3. Center Canvas Well with Dynamic Ratio & Draggable Text */}
+          {/* 3. Center Canvas Well */}
           <CenterCanvas
             canvasRef={canvasRef}
             beforeCanvasRef={beforeCanvasRef}
@@ -273,8 +425,11 @@ export default function Home() {
             compareMode={compareMode}
             layers={layers}
             selectedLayerId={selectedLayerId}
-            onSelectLayer={setSelectedLayerId}
+            adjustments={adjustments}
+            onSelectLayer={handleSelectLayer}
             onUpdateTextPosition={handleUpdateTextPosition}
+            onUpdateTextFontSize={handleUpdateTextFontSize}
+            onDeleteLayer={handleDeleteLayer}
             onToggleCompare={() => setCompareMode(!compareMode)}
             onImageSelect={handleImageSelect}
             onApplyCrop={handleApplyCrop}
@@ -284,23 +439,30 @@ export default function Home() {
           {/* 4. Filter Presets Strip */}
           <FilterPresetsStrip
             selectedPresetId={selectedPresetId}
-            onSelectPreset={setSelectedPresetId}
+            onSelectPreset={handleSelectPreset}
           />
         </div>
 
-        {/* 5. Contextual Right Panel with Layer Reordering */}
+        {/* 5. Contextual Right Panel */}
         <RightPanel
           activeTool={activeTool}
           adjustments={adjustments}
           onChangeAdjustment={handleChangeAdjustment}
+          filterSettings={filterSettings}
+          onChangeFilter={handleChangeFilter}
           transformState={transformState}
           onUpdateTransform={updateTransform}
           layers={layers}
           selectedLayerId={selectedLayerId}
-          onSelectLayer={setSelectedLayerId}
+          onSelectLayer={handleSelectLayer}
           onToggleLayerVisibility={handleToggleLayerVisibility}
+          onDeleteLayer={handleDeleteLayer}
           onReorderLayers={handleReorderLayers}
           onAddTextLayer={handleAddTextLayer}
+          onUpdateTextLayer={handleUpdateTextLayer}
+          exportSettings={exportSettings}
+          onChangeExportSettings={setExportSettings}
+          onTriggerExport={handleTriggerExport}
         />
       </div>
 

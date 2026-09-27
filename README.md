@@ -1,6 +1,6 @@
 # StudioNorth
 
-A browser-based photo editing app with non-destructive adjustments, filters, crop tools, dynamic aspect ratio, freely draggable text overlays, layer stacking reordering, and project persistence.
+A browser-based photo editing app with non-destructive adjustments, LUT filters, edit history undo/redo, export controls, dynamic aspect ratio, freely draggable & resizable text overlays with categorized fonts, high-visibility grid guides, and layer stacking reordering.
 
 ## Tech Stack
 
@@ -8,23 +8,25 @@ A browser-based photo editing app with non-destructive adjustments, filters, cro
 - **Backend:** Node.js / Express with TypeScript
 - **Canvas Engine:** Client-side HTML5 Canvas pixel & vector manipulation pipeline
 
-## Key Architecture & Features Built
+## Complete Feature Matrix (Phases 0–6 Complete)
 
-1. **Dynamic Canvas Aspect Ratio**:
-   - Canvas container dynamically sets `style={{ aspectRatio: `${naturalWidth} / ${naturalHeight}` }}`.
-   - Constrained using `max-w-full max-h-full` so any portrait, landscape, or panoramic image renders at a sane on-screen scale without distortion.
-   - Compare Slider (Before/After) inherits this exact dynamic ratio so layers align pixel-for-pixel.
-   - 16:10 placeholder ratio maintained for empty state.
-2. **Freely Draggable Text Layers**:
-   - Text layers added via **Text (T)** tool can be freely dragged anywhere on the canvas viewport via mouse or touch (`mousedown`, `mousemove`, `mouseup`, `touchstart`, `touchmove`, `touchend`).
-   - Position stored as normalized percentage `(x, y)` relative to canvas bounds so it scales cleanly with canvas zooming or resizing.
-   - Active selected text layer displays a dashed bounding box with corner control handles.
-   - Clicking outside deselects the text layer.
-3. **Layer Stacking Order (Top of List = Rendered on Top)**:
-   - Layers panel matches the Photoshop/Figma mental model: Top item in the panel list renders ABOVE all items below it.
-   - Layers can be reordered via **Drag & Drop** or using **▲ / ▼** move buttons in the panel.
-   - New text layers are inserted at the **TOP** of the stack (index 0) so they render immediately over background content.
-   - Reordering layers changes z-index rendering sequence on canvas without resetting layer positions.
+1. **Phase 4 — Preset Filters & Color Grading LUTs**:
+   - Aesthetic filter preview cards (`NATURAL`, `VNTG`, `COOL`, `MONO`, `WARM`, `DRAMA`, `CYBER`) with micro badges and active glowing rings.
+   - Intensity slider (0–100%) to blend LUT filter with image adjustments.
+2. **Phase 5 — Complete Undo / Redo Edit History Stack**:
+   - Full history tracking for all adjustments, filter preset changes, text additions, and transforms.
+   - `Ctrl+Z` (Undo) and `Ctrl+Y` / `Ctrl+Shift+Z` (Redo) with active disabled button states.
+3. **Phase 6 — Full Resolution Export Engine**:
+   - Download exports in `PNG`, `JPEG`, or `WebP` formats.
+   - Quality slider (10% to 100%) for lossy formats.
+4. **Interactive Text Layer Resizing & Categorized Fonts**:
+   - **Corner Anchor Resizing**: Drag any of the 4 corner handles (`top-left`, `top-right`, `bottom-left`, `bottom-right`) on active text selection box to resize font size live (12px to 160px).
+   - **Categorized Fonts**: Standard, Design, Artsy, and Display categories.
+5. **Layer Management & Deletion**:
+   - Red trash icon on layer rows + `Delete` / `Backspace` key shortcut to delete selected layers.
+   - Reorder layers via drag & drop or ▲ / ▼ buttons (top of list = rendered on top).
+6. **High-Visibility Canvas Grid Guides**:
+   - High contrast guide lines with subtle drop shadows: `GRID: OFF` ➔ `GRID: 8×8` ➔ `GRID: THIRDS`.
 
 ## Getting Started
 
@@ -46,9 +48,9 @@ npm run dev:server   # → http://localhost:4000
 - [x] Phase 1 — Image upload + full-screen editor shell redesign
 - [x] Phase 2 — Core adjustments (brightness, contrast, saturation, exposure)
 - [x] Phase 3 — Crop + transform (rotate 90°, flip H/V, crop overlay)
-- [x] Phase 4 — Dynamic aspect ratio, draggable text layers & layer stacking order
-- [ ] Phase 5 — Undo/redo + history
-- [ ] Phase 6 — Export
+- [x] Phase 4 — Preset LUT filters & aesthetic filter cards
+- [x] Phase 5 — Undo/redo & edit history stack
+- [x] Phase 6 — Full resolution PNG/JPEG/WebP export engine
 - [ ] Phase 7 — Auth
 - [ ] Phase 8 — Save/load projects
 - [ ] Phase 9 — Gallery/dashboard

@@ -1,7 +1,7 @@
 "use client";
 
-import { RefObject, useState, useCallback, useRef, useEffect } from "react";
-import { ToolType, LayerItem, TextOverlay, ImageMetaData } from "@/types/editor";
+import { RefObject, useState, useCallback, useRef, useEffect, memo } from "react";
+import { ToolType, LayerItem, TextOverlay, ImageMetaData, Adjustments } from "@/types/editor";
 
 interface CenterCanvasProps {
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -13,8 +13,11 @@ interface CenterCanvasProps {
   compareMode: boolean;
   layers: LayerItem[];
   selectedLayerId: string | null;
+  adjustments: Adjustments;
   onSelectLayer: (id: string | null) => void;
   onUpdateTextPosition: (id: string, x: number, y: number) => void;
+  onUpdateTextFontSize: (id: string, fontSize: number) => void;
+  onDeleteLayer: (id: string) => void;
   onToggleCompare: () => void;
   onImageSelect: (file: File) => void;
   onApplyCrop?: (crop: { x: number; y: number; width: number; height: number }) => void;
@@ -23,7 +26,7 @@ interface CenterCanvasProps {
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
-export default function CenterCanvas({
+const CenterCanvas = memo(function CenterCanvas({
   canvasRef,
   beforeCanvasRef,
   hasImage,
@@ -33,28 +36,39 @@ export default function CenterCanvas({
   compareMode,
   layers,
   selectedLayerId,
+  adjustments,
   onSelectLayer,
   onUpdateTextPosition,
+  onUpdateTextFontSize,
+  onDeleteLayer,
   onToggleCompare,
   onImageSelect,
   onApplyCrop,
   renderPipeline,
 }: CenterCanvasProps) {
+  // Track if a pointer-down on a text layer just happened so the main
+  // deselect handler (also on mousedown) knows to skip deselecting.
+  const textInteractingRef = useRef(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
   const [dividerPercent, setDividerPercent] = useState<number>(50);
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
 
   // Active dragging state for text layers
   const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
-  const textDragStartRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const textDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  // Corner handle resizing state
+  const [resizingTextId, setResizingTextId] = useState<string | null>(null);
+  const fontResizeRef = useRef<{ startX: number; startY: number; origSize: number } | null>(null);
 
   const [cropBox] = useState({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
   const compareContainerRef = useRef<HTMLDivElement>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
+  const rafRef = useRef<number | null>(null);
 
-  // Dynamic Aspect Ratio calculation (e.g. 1920 / 1080)
+  const zoomScale = zoom / 100;
   const imageAspectRatio = imageData ? `${imageData.width} / ${imageData.height}` : "16 / 10";
 
   // Trigger render whenever canvas is mounted or hasImage becomes true
@@ -77,7 +91,6 @@ export default function CenterCanvas({
     setDividerPercent(clampedPct);
   }, []);
 
-  // Compare Slider Drag Handlers
   const handleCompareMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsDraggingDivider(true);
@@ -102,84 +115,113 @@ export default function CenterCanvas({
     setIsDraggingDivider(false);
   };
 
-  // Text Layer Dragging Logic
-  const handleTextMouseDown = (e: React.MouseEvent, textItem: TextOverlay) => {
+  // Text Layer Drag Handler
+  const handleTextPointerDown = (
+    e: React.MouseEvent | React.TouchEvent,
+    textItem: TextOverlay
+  ) => {
+    // Mark that interaction is with a text layer so the main onMouseDown
+    // deselect handler does not clear the selection.
+    textInteractingRef.current = true;
     e.stopPropagation();
     onSelectLayer(textItem.id);
     setDraggingTextId(textItem.id);
-    textDragStartRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
+
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+    textDragRef.current = {
+      startX: clientX,
+      startY: clientY,
       origX: textItem.x,
       origY: textItem.y,
     };
   };
 
-  const handleTextTouchStart = (e: React.TouchEvent, textItem: TextOverlay) => {
-    if (e.touches.length > 0) {
-      e.stopPropagation();
-      onSelectLayer(textItem.id);
-      setDraggingTextId(textItem.id);
-      textDragStartRef.current = {
-        startX: e.touches[0].clientX,
-        startY: e.touches[0].clientY,
-        origX: textItem.x,
-        origY: textItem.y,
-      };
-    }
+  // Corner Anchor Handle Resize Handler
+  const handleAnchorResizeDown = (
+    e: React.MouseEvent | React.TouchEvent,
+    textItem: TextOverlay
+  ) => {
+    e.stopPropagation();
+    onSelectLayer(textItem.id);
+    setResizingTextId(textItem.id);
+
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+    fontResizeRef.current = {
+      startX: clientX,
+      startY: clientY,
+      origSize: textItem.fontSize,
+    };
   };
 
-  // Global window listeners for Compare slider & Text drag
+  // Global window listeners using requestAnimationFrame for smooth 60 FPS dragging
   useEffect(() => {
-    const handleGlobalPointerMove = (e: MouseEvent) => {
-      // Compare Slider drag
-      if (isDraggingDivider) {
-        updateDividerPos(e.clientX);
-      }
+    const handlePointerMove = (clientX: number, clientY: number) => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
-      // Text Layer drag
-      if (draggingTextId && textDragStartRef.current && canvasWrapperRef.current) {
-        const rect = canvasWrapperRef.current.getBoundingClientRect();
-        const deltaX = (e.clientX - textDragStartRef.current.startX) / rect.width;
-        const deltaY = (e.clientY - textDragStartRef.current.startY) / rect.height;
+      rafRef.current = requestAnimationFrame(() => {
+        if (isDraggingDivider) {
+          updateDividerPos(clientX);
+        }
 
-        const newX = Math.min(0.9, Math.max(0, textDragStartRef.current.origX + deltaX));
-        const newY = Math.min(0.9, Math.max(0, textDragStartRef.current.origY + deltaY));
+        // Text Layer Position Drag
+        if (draggingTextId && textDragRef.current && canvasWrapperRef.current) {
+          const rect = canvasWrapperRef.current.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const deltaX = (clientX - textDragRef.current.startX) / rect.width;
+            const deltaY = (clientY - textDragRef.current.startY) / rect.height;
 
-        onUpdateTextPosition(draggingTextId, newX, newY);
+            const newX = Math.min(0.95, Math.max(0, textDragRef.current.origX + deltaX));
+            const newY = Math.min(0.95, Math.max(0, textDragRef.current.origY + deltaY));
+
+            onUpdateTextPosition(draggingTextId, newX, newY);
+          }
+        }
+
+        // Corner Anchor Font Size Resize Drag
+        if (resizingTextId && fontResizeRef.current) {
+          const delta = clientX - fontResizeRef.current.startX + (clientY - fontResizeRef.current.startY);
+          const scaleFactor = 0.5;
+          const newSize = Math.round(
+            Math.min(160, Math.max(12, fontResizeRef.current.origSize + delta * scaleFactor))
+          );
+          onUpdateTextFontSize(resizingTextId, newSize);
+        }
+      });
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      handlePointerMove(e.clientX, e.clientY);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
       }
     };
 
-    const handleGlobalTouchMove = (e: TouchEvent) => {
-      if (draggingTextId && textDragStartRef.current && canvasWrapperRef.current && e.touches.length > 0) {
-        const rect = canvasWrapperRef.current.getBoundingClientRect();
-        const deltaX = (e.touches[0].clientX - textDragStartRef.current.startX) / rect.width;
-        const deltaY = (e.touches[0].clientY - textDragStartRef.current.startY) / rect.height;
-
-        const newX = Math.min(0.9, Math.max(0, textDragStartRef.current.origX + deltaX));
-        const newY = Math.min(0.9, Math.max(0, textDragStartRef.current.origY + deltaY));
-
-        onUpdateTextPosition(draggingTextId, newX, newY);
-      }
-    };
-
-    const handleGlobalPointerUp = () => {
+    const handlePointerUp = () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (isDraggingDivider) setIsDraggingDivider(false);
       if (draggingTextId) setDraggingTextId(null);
+      if (resizingTextId) setResizingTextId(null);
     };
 
-    window.addEventListener("mousemove", handleGlobalPointerMove);
-    window.addEventListener("mouseup", handleGlobalPointerUp);
-    window.addEventListener("touchmove", handleGlobalTouchMove);
-    window.addEventListener("touchend", handleGlobalPointerUp);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handlePointerUp);
+    window.addEventListener("touchmove", handleTouchMove);
+    window.addEventListener("touchend", handlePointerUp);
 
     return () => {
-      window.removeEventListener("mousemove", handleGlobalPointerMove);
-      window.removeEventListener("mouseup", handleGlobalPointerUp);
-      window.removeEventListener("touchmove", handleGlobalTouchMove);
-      window.removeEventListener("touchend", handleGlobalPointerUp);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handlePointerUp);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handlePointerUp);
     };
-  }, [isDraggingDivider, draggingTextId, onUpdateTextPosition, updateDividerPos]);
+  }, [isDraggingDivider, draggingTextId, resizingTextId, onUpdateTextPosition, onUpdateTextFontSize, updateDividerPos]);
 
   // File Upload Handlers
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -231,15 +273,40 @@ export default function CenterCanvas({
     }
   };
 
-  const zoomScale = zoom / 100;
-
-  // Extract visible text layers
   const textLayers = layers.filter((l) => l.type === "text" && l.textData && l.visible);
+
+  // Build CSS filter string for live preview during slider drag.
+  // This is cheap (GPU compositing) and gives instant feedback.
+  const cssAdjustFilter = [
+    adjustments.brightness !== 0
+      ? `brightness(${1 + (adjustments.brightness / 100) * 0.4})`
+      : "",
+    adjustments.contrast !== 0
+      ? `contrast(${1 + (adjustments.contrast / 100) * 0.6})`
+      : "",
+    adjustments.saturation !== 0
+      ? `saturate(${1 + (adjustments.saturation / 100) * 0.75})`
+      : "",
+    adjustments.exposure !== 0
+      ? `brightness(${Math.pow(2, (adjustments.exposure / 100) * 0.5).toFixed(3)})`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <main
       className="flex-1 bg-[#0a0a0c] relative overflow-hidden flex flex-col items-center justify-between p-6 select-none"
-      onClick={() => onSelectLayer(null)}
+      onMouseDown={(e) => {
+        // Only deselect when clicking directly on the canvas backdrop,
+        // not when the event bubbled from a text layer (stopPropagation handles
+        // that, but we also guard with the ref for extra safety).
+        if (textInteractingRef.current) {
+          textInteractingRef.current = false;
+          return;
+        }
+        onSelectLayer(null);
+      }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -303,7 +370,7 @@ export default function CenterCanvas({
         </div>
       </div>
 
-      {/* Main Workspace Area with Dynamic Aspect Ratio */}
+      {/* Main Workspace Area */}
       <div className="flex-1 w-full flex items-center justify-center relative overflow-auto py-4">
         {!hasImage ? (
           /* Empty State Placeholder */
@@ -360,7 +427,7 @@ export default function CenterCanvas({
             />
           </div>
         ) : compareMode ? (
-          /* Dynamic Ratio Compare Slider */
+          /* Compare View */
           <div
             ref={compareContainerRef}
             onMouseDown={handleCompareMouseDown}
@@ -373,10 +440,7 @@ export default function CenterCanvas({
               transform: `scale(${zoomScale})`,
             }}
           >
-            {/* Bottom Layer: BEFORE Canvas */}
             <canvas ref={beforeCanvasRef} className="block w-full h-full object-contain" />
-
-            {/* Top Layer: AFTER Canvas with clip-path */}
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
@@ -386,7 +450,6 @@ export default function CenterCanvas({
               <canvas ref={canvasRef} className="block w-full h-full object-contain" />
             </div>
 
-            {/* Corner Labels */}
             <div className="absolute bottom-3 left-3 text-[11px] font-mono text-white/40 font-bold uppercase tracking-widest pointer-events-none">
               AFTER
             </div>
@@ -395,7 +458,6 @@ export default function CenterCanvas({
               BEFORE
             </div>
 
-            {/* Vertical Divider Line & Grip Handle */}
             <div
               className="absolute top-0 bottom-0 z-30 pointer-events-none flex items-center justify-center"
               style={{ left: `${dividerPercent}%`, transform: "translateX(-50%)" }}
@@ -419,7 +481,7 @@ export default function CenterCanvas({
             </div>
           </div>
         ) : (
-          /* Normal Dynamic Canvas View + Interactive Draggable Text Layers */
+          /* Normal Canvas View + Freely Draggable Text Selection & Quick Delete Badge */
           <div
             ref={canvasWrapperRef}
             className="relative transition-transform duration-75 origin-center flex items-center justify-center border border-[#26272b]/60 max-w-full max-h-full"
@@ -428,40 +490,94 @@ export default function CenterCanvas({
               transform: `scale(${zoomScale})`,
             }}
           >
-            {/* Real Canvas */}
-            <canvas ref={canvasRef} className="block w-full h-full object-contain" />
+            {/* CSS filter applied here for zero-cost live preview during slider drag.
+                The actual pixel-accurate render happens debounced in useCanvas. */}
+            <canvas
+              ref={canvasRef}
+              className="block w-full h-full object-contain"
+              style={{ filter: cssAdjustFilter || undefined }}
+            />
 
-            {/* Interactive Draggable Text Layer Overlays */}
+            {/* Freely Draggable Interactive Text Overlay Triggers */}
             {textLayers.map((layer) => {
               const t = layer.textData!;
               const isSelected = selectedLayerId === layer.id;
+
               return (
                 <div
                   key={layer.id}
-                  onMouseDown={(e) => handleTextMouseDown(e, t)}
-                  onTouchStart={(e) => handleTextTouchStart(e, t)}
+                  onMouseDown={(e) => handleTextPointerDown(e, t)}
+                  onTouchStart={(e) => handleTextPointerDown(e, t)}
                   className={`
-                    absolute font-mono font-bold cursor-move leading-none px-2 py-1 rounded transition-all select-none
+                    absolute font-mono font-bold cursor-move leading-none px-2 py-1 rounded transition-all select-none z-20 whitespace-nowrap
                     ${
                       isSelected
-                        ? "border-2 border-dashed border-white bg-black/40 shadow-xl"
-                        : "border border-transparent hover:border-white/40"
+                        ? "border-2 border-dashed border-[#4b9fef] bg-[#4b9fef]/10 shadow-lg"
+                        : "border border-transparent hover:border-white/40 hover:bg-white/5"
                     }
                   `}
                   style={{
                     left: `${t.x * 100}%`,
                     top: `${t.y * 100}%`,
-                    fontSize: `${t.fontSize * 0.4}px`, // scaled for CSS preview
-                    color: t.color,
+                    fontSize: `${t.fontSize * 0.35}px`,
+                    color: "transparent",
                   }}
                 >
-                  {t.text}
+                  <span className="invisible">{t.text}</span>
+
+                  {/* Quick Delete Trash Badge on Direct Text Selection */}
+                  {isSelected && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteLayer(layer.id);
+                      }}
+                      title="Delete Text Layer"
+                      className="absolute -top-7 left-1/2 -translate-x-1/2 bg-red-600 hover:bg-red-500 text-white p-1 rounded-full shadow-lg transition-transform hover:scale-110 cursor-pointer"
+                    >
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                        />
+                      </svg>
+                    </button>
+                  )}
+
+                  {/* Corner Anchor Handles for Real-time Font Size Resizing */}
                   {isSelected && (
                     <>
-                      <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
-                      <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
-                      <div className="absolute -bottom-1 -left-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
-                      <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
+                      <div
+                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
+                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
+                        title="Drag to resize text font size"
+                        className="absolute -top-2 -left-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
+                      />
+                      <div
+                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
+                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
+                        title="Drag to resize text font size"
+                        className="absolute -top-2 -right-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
+                      />
+                      <div
+                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
+                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
+                        title="Drag to resize text font size"
+                        className="absolute -bottom-2 -left-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
+                      />
+                      <div
+                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
+                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
+                        title="Drag to resize text font size"
+                        className="absolute -bottom-2 -right-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
+                      />
                     </>
                   )}
                 </div>
@@ -490,4 +606,6 @@ export default function CenterCanvas({
       </div>
     </main>
   );
-}
+});
+
+export default CenterCanvas;

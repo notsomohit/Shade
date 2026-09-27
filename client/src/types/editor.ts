@@ -4,13 +4,22 @@ export type ToolType =
   | "adjust"
   | "filter"
   | "text"
-  | "layers";
+  | "layers"
+  | "export";
+
+export type GridMode = "none" | "grid" | "thirds";
 
 export interface Adjustments {
   brightness: number; // -100 to 100
   contrast: number; // -100 to 100
   saturation: number; // -100 to 100
   exposure: number; // -100 to 100
+}
+
+export interface FilterSettings {
+  id: string; // e.g. 'vintage', 'sepia', 'mono', 'cyber'
+  name: string;
+  intensity: number; // 0 to 100
 }
 
 export interface PresetFilter {
@@ -23,9 +32,11 @@ export interface TextOverlay {
   id: string;
   text: string;
   fontSize: number; // px
+  fontFamily: string;
+  fontCategory: "standard" | "design" | "artsy" | "display";
   color: string; // hex/rgb
-  x: number; // normalized 0 to 1 (percentage of canvas width)
-  y: number; // normalized 0 to 1 (percentage of canvas height)
+  x: number; // normalized 0 to 1
+  y: number; // normalized 0 to 1
   visible: boolean;
 }
 
@@ -42,4 +53,9 @@ export interface ImageMetaData {
   width: number;
   height: number;
   aspectRatio: number;
+}
+
+export interface ExportSettings {
+  format: "image/png" | "image/jpeg" | "image/webp";
+  quality: number; // 0.1 to 1.0
 }
