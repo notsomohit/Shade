@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ToolType,
   Adjustments,
@@ -9,12 +9,13 @@ import {
   ExportSettings,
   CurvesData,
   SelectivePoint,
+  PhotoPreset,
 } from "@/types/editor";
 import { TransformState } from "@/hooks/useCanvas";
 import { CATEGORIZED_FONTS } from "@/utils/fonts";
 import CurvesTool, { DEFAULT_CURVES } from "@/components/CurvesTool";
 import SelectiveTool from "@/components/SelectiveTool";
-import { PRESET_LOOKS, PremiumLookPreset } from "@/components/FilterPresetsStrip";
+import { PHOTO_PRESETS, PRESET_CATEGORIES } from "@/constants/presets";
 
 interface RightPanelProps {
   activeTool: ToolType;
@@ -33,7 +34,8 @@ interface RightPanelProps {
   onToggleEyedropper: () => void;
   filterSettings: FilterSettings;
   onChangeFilter: (filter: FilterSettings) => void;
-  onApplyLookPreset?: (look: PremiumLookPreset) => void;
+  onApplyPreset?: (preset: PhotoPreset, intensity?: number) => void;
+  onApplyLookPreset?: (preset: any) => void;
   transformState: TransformState;
   onUpdateTransform: (transform: Partial<TransformState>) => void;
   layers: LayerItem[];
@@ -44,8 +46,14 @@ interface RightPanelProps {
   onDuplicateLayer?: (id: string) => void;
   onRenameLayer?: (id: string, name: string) => void;
   onReorderLayers: (newLayers: LayerItem[]) => void;
+  onResetCrop?: () => void;
+  onApplyCrop?: () => void;
   onAddDoubleExposureLayer?: (file: File) => void;
-  onUpdateDoubleExposureLayer?: (id: string, opacity: number, blendMode: "normal" | "screen" | "multiply" | "overlay" | "soft-light") => void;
+  onUpdateDoubleExposureLayer?: (
+    id: string,
+    opacity: number,
+    blendMode: "normal" | "screen" | "multiply" | "overlay" | "soft-light"
+  ) => void;
   onAddTextLayer: (
     text: string,
     fontSize: number,
@@ -91,6 +99,7 @@ export default function RightPanel({
   onToggleEyedropper,
   filterSettings,
   onChangeFilter,
+  onApplyPreset,
   onApplyLookPreset,
   transformState,
   onUpdateTransform,
@@ -102,6 +111,8 @@ export default function RightPanel({
   onDuplicateLayer,
   onRenameLayer,
   onReorderLayers,
+  onResetCrop,
+  onApplyCrop,
   onAddDoubleExposureLayer,
   onUpdateDoubleExposureLayer,
   onAddTextLayer,
@@ -117,6 +128,11 @@ export default function RightPanel({
   const [fontSizeInput, setFontSizeInput] = useState(48);
   const [textColorInput, setTextColorInput] = useState("#4b9fef");
   const [selectedFont, setSelectedFont] = useState(CATEGORIZED_FONTS[0]);
+
+  // Preset browser state
+  const [presetCategory, setPresetCategory] = useState<string>("All");
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const [presetIntensity, setPresetIntensity] = useState<number>(100);
 
   // Selected layer helpers
   const selectedLayer = layers.find((l) => l.id === selectedLayerId);
@@ -139,22 +155,17 @@ export default function RightPanel({
     }
   }, [selectedLayerId, selectedLayer]);
 
-  // Drag reorder state
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-
   // Layer context menu state
   const [ctxMenu, setCtxMenu] = useState<{ layerId: string; x: number; y: number } | null>(null);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-
   const closeCtxMenu = () => setCtxMenu(null);
 
   useEffect(() => {
     if (!ctxMenu) return;
     const handler = () => closeCtxMenu();
     window.addEventListener("click", handler);
-    window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtxMenu(); });
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeCtxMenu();
+    });
     return () => window.removeEventListener("click", handler);
   }, [ctxMenu]);
 
@@ -178,12 +189,36 @@ export default function RightPanel({
     onUpdateTransform({ straighten: val });
   };
 
+  const handlePresetClick = (preset: PhotoPreset) => {
+    setSelectedPresetId(preset.id);
+    if (onApplyPreset) {
+      onApplyPreset(preset, presetIntensity);
+    } else if (onApplyLookPreset) {
+      onApplyLookPreset(preset);
+    }
+  };
+
+  const handleIntensityChange = (newIntensity: number) => {
+    setPresetIntensity(newIntensity);
+    if (selectedPresetId && onApplyPreset) {
+      const current = PHOTO_PRESETS.find((p) => p.id === selectedPresetId);
+      if (current) {
+        onApplyPreset(current, newIntensity);
+      }
+    }
+  };
+
+  const filteredPresets =
+    presetCategory === "All"
+      ? PHOTO_PRESETS
+      : PHOTO_PRESETS.filter((p) => p.category === presetCategory);
+
   return (
     <aside
       className={`
         border-l border-[#26272b] bg-[#131418] flex flex-col shrink-0 font-mono select-none relative
         transition-[width,min-width,max-width] duration-200 ease-in-out
-        ${collapsed ? "w-0 min-w-0 max-w-0 overflow-hidden border-l-0" : "w-80 max-w-80"}
+        ${collapsed ? "w-0 min-w-0 max-w-0 border-l-0" : "w-80 max-w-80"}
       `}
     >
       {/* Collapse / Expand Chevron Tab Button */}
@@ -193,15 +228,12 @@ export default function RightPanel({
           title={collapsed ? "Expand adjustments panel" : "Collapse panel"}
           className="absolute -left-3.5 top-1/2 -translate-y-1/2 z-50 w-3.5 h-12 bg-[#1c1d22] hover:bg-[#4b9fef] text-[#9a9d9a] hover:text-black border border-[#26272b] border-r-0 rounded-l flex items-center justify-center cursor-pointer transition-colors shadow-md"
         >
-          <span className="text-[10px] font-bold">
-            {collapsed ? "‹" : "›"}
-          </span>
+          <span className="text-[10px] font-bold">{collapsed ? "‹" : "›"}</span>
         </button>
       )}
 
       {/* Main Panel Content Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-6">
-
+      <div className={`flex-1 overflow-y-auto p-5 space-y-6 ${collapsed ? "hidden" : "block"}`}>
         {/* 1. SELECTIVE (SNAPSEED LOCAL ADJUSTMENTS) */}
         {activeTool === "selective" && (
           <SelectiveTool
@@ -230,11 +262,16 @@ export default function RightPanel({
           </div>
         )}
 
-        {/* 3. ADJUSTMENTS / TUNE IMAGE (WB, STRUCTURE, VIGNETTE, GRAIN) */}
+        {/* 3. ADJUSTMENTS / TUNE IMAGE (PROFESSIONAL 16-SLIDER ENGINE) */}
         {(activeTool === "adjust" || activeTool === "select") && (
           <div className="space-y-6">
             <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
-              <span className="text-xs font-bold text-[#f0f0ec]">TUNE IMAGE</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-[#f0f0ec]">TUNE IMAGE</span>
+                <span className="text-[9px] px-1 py-0.2 rounded bg-[#4b9fef]/10 text-[#4b9fef] font-bold">
+                  PRO
+                </span>
+              </div>
               {onResetAdjustments && (
                 <button
                   onClick={onResetAdjustments}
@@ -245,10 +282,10 @@ export default function RightPanel({
               )}
             </div>
 
-            {/* Basic Tonal Sliders */}
+            {/* A. LIGHT & EXPOSURE */}
             <div className="space-y-4">
               <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                Light & Contrast
+                Light & Exposure
               </span>
 
               {/* Exposure */}
@@ -274,7 +311,9 @@ export default function RightPanel({
                 <div className="flex justify-between text-xs">
                   <span className="text-[#9a9d9a]">Brightness</span>
                   <span className="text-[#f0f0ec] font-bold">
-                    {adjustments.brightness > 0 ? `+${adjustments.brightness}` : adjustments.brightness}
+                    {adjustments.brightness > 0
+                      ? `+${adjustments.brightness}`
+                      : adjustments.brightness}
                   </span>
                 </div>
                 <input
@@ -304,36 +343,99 @@ export default function RightPanel({
                   className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
                 />
               </div>
+            </div>
 
-              {/* Saturation */}
+            {/* B. DYNAMIC RANGE (HIGHLIGHTS, SHADOWS, WHITES, BLACKS) */}
+            <div className="space-y-4 pt-2 border-t border-[#26272b]">
+              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+                Dynamic Range & Tones
+              </span>
+
+              {/* Highlights */}
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Saturation</span>
+                  <span className="text-[#9a9d9a]">Highlights</span>
                   <span className="text-[#f0f0ec] font-bold">
-                    {adjustments.saturation > 0 ? `+${adjustments.saturation}` : adjustments.saturation}
+                    {adjustments.highlights > 0
+                      ? `+${adjustments.highlights}`
+                      : adjustments.highlights}
                   </span>
                 </div>
                 <input
                   type="range"
                   min="-100"
                   max="100"
-                  value={adjustments.saturation}
-                  onChange={(e) => onChangeAdjustment("saturation", Number(e.target.value))}
+                  value={adjustments.highlights}
+                  onChange={(e) => onChangeAdjustment("highlights", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Shadows */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Shadows</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.shadows > 0 ? `+${adjustments.shadows}` : adjustments.shadows}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.shadows}
+                  onChange={(e) => onChangeAdjustment("shadows", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Whites */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Whites</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.whites > 0 ? `+${adjustments.whites}` : adjustments.whites}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.whites}
+                  onChange={(e) => onChangeAdjustment("whites", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Blacks */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Blacks</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.blacks > 0 ? `+${adjustments.blacks}` : adjustments.blacks}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.blacks}
+                  onChange={(e) => onChangeAdjustment("blacks", Number(e.target.value))}
                   className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
                 />
               </div>
             </div>
 
-            {/* White Balance Section with Eyedropper */}
+            {/* C. COLOR & WHITE BALANCE */}
             <div className="space-y-4 pt-2 border-t border-[#26272b]">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                  White Balance
+                  Color & White Balance
                 </span>
                 <button
                   onClick={onToggleEyedropper}
                   className={`
-                    px-2 py-0.5 text-[11px] rounded border flex items-center gap-1 transition-all cursor-pointer
+                    px-2 py-0.5 text-[10px] rounded border flex items-center gap-1 transition-all cursor-pointer
                     ${
                       isEyedropperActive
                         ? "bg-[#4b9fef] text-black border-[#4b9fef] font-bold"
@@ -343,7 +445,12 @@ export default function RightPanel({
                   title="Eyedropper: Click on photo to sample neutral gray"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+                    />
                   </svg>
                   {isEyedropperActive ? "Sampling..." : "Eyedropper"}
                 </button>
@@ -352,9 +459,11 @@ export default function RightPanel({
               {/* Temperature */}
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Temperature (Cool / Warm)</span>
+                  <span className="text-[#9a9d9a]">Temperature</span>
                   <span className="text-[#f0f0ec] font-bold">
-                    {adjustments.temperature > 0 ? `+${adjustments.temperature}` : adjustments.temperature}
+                    {adjustments.temperature > 0
+                      ? `+${adjustments.temperature}`
+                      : adjustments.temperature}
                   </span>
                 </div>
                 <input
@@ -370,7 +479,7 @@ export default function RightPanel({
               {/* Tint */}
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Tint (Green / Magenta)</span>
+                  <span className="text-[#9a9d9a]">Tint</span>
                   <span className="text-[#f0f0ec] font-bold">
                     {adjustments.tint > 0 ? `+${adjustments.tint}` : adjustments.tint}
                   </span>
@@ -384,28 +493,116 @@ export default function RightPanel({
                   className="w-full accent-fuchsia-400 h-1.5 bg-gradient-to-r from-emerald-600 via-[#26272b] to-fuchsia-600 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-            </div>
 
-            {/* Details & Effects (Structure, Vignette, Grain) */}
-            <div className="space-y-4 pt-2 border-t border-[#26272b]">
-              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                Details & Texture
-              </span>
-
-              {/* Structure / Clarity */}
+              {/* Saturation */}
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Structure (Clarity)</span>
+                  <span className="text-[#9a9d9a]">Saturation</span>
                   <span className="text-[#f0f0ec] font-bold">
-                    {adjustments.structure > 0 ? `+${adjustments.structure}` : adjustments.structure}
+                    {adjustments.saturation > 0
+                      ? `+${adjustments.saturation}`
+                      : adjustments.saturation}
                   </span>
                 </div>
                 <input
                   type="range"
                   min="-100"
                   max="100"
-                  value={adjustments.structure}
-                  onChange={(e) => onChangeAdjustment("structure", Number(e.target.value))}
+                  value={adjustments.saturation}
+                  onChange={(e) => onChangeAdjustment("saturation", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Vibrance */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Vibrance (Skin Protected)</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.vibrance > 0 ? `+${adjustments.vibrance}` : adjustments.vibrance}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.vibrance}
+                  onChange={(e) => onChangeAdjustment("vibrance", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* D. DETAIL & TEXTURE (CLARITY, SHARPNESS, BLUR, GRAIN, VIGNETTE) */}
+            <div className="space-y-4 pt-2 border-t border-[#26272b]">
+              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+                Detail, Blur & Texture
+              </span>
+
+              {/* Clarity */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Clarity (Local Contrast)</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {(adjustments.clarity ?? adjustments.structure ?? 0) > 0
+                      ? `+${adjustments.clarity ?? adjustments.structure ?? 0}`
+                      : adjustments.clarity ?? adjustments.structure ?? 0}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.clarity ?? adjustments.structure ?? 0}
+                  onChange={(e) => onChangeAdjustment("clarity", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Sharpness */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Sharpness (Unsharp Mask)</span>
+                  <span className="text-[#f0f0ec] font-bold">{adjustments.sharpness ?? 0}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={adjustments.sharpness ?? 0}
+                  onChange={(e) => onChangeAdjustment("sharpness", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Blur */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Gaussian Blur</span>
+                  <span className="text-[#f0f0ec] font-bold">{adjustments.blur ?? 0}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={adjustments.blur ?? 0}
+                  onChange={(e) => onChangeAdjustment("blur", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Film Grain */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Film Grain</span>
+                  <span className="text-[#f0f0ec] font-bold">{adjustments.grain}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={adjustments.grain}
+                  onChange={(e) => onChangeAdjustment("grain", Number(e.target.value))}
                   className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
                 />
               </div>
@@ -427,22 +624,6 @@ export default function RightPanel({
                   className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-
-              {/* Film Grain */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Film Grain</span>
-                  <span className="text-[#f0f0ec] font-bold">{adjustments.grain}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={adjustments.grain}
-                  onChange={(e) => onChangeAdjustment("grain", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
             </div>
           </div>
         )}
@@ -450,7 +631,35 @@ export default function RightPanel({
         {/* 4. CROP, ROTATE & STRAIGHTEN */}
         {activeTool === "crop" && (
           <div className="space-y-6">
-            <span className="text-xs font-bold text-[#f0f0ec]">CROP & STRAIGHTEN</span>
+            <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
+              <span className="text-xs font-bold text-[#f0f0ec]">CROP & STRAIGHTEN</span>
+              {onResetCrop && (
+                <button
+                  onClick={onResetCrop}
+                  className="text-[10px] text-[#4b9fef] hover:underline cursor-pointer"
+                >
+                  Reset to Full
+                </button>
+              )}
+            </div>
+
+            {/* Quick Action: Apply Crop Button */}
+            {onApplyCrop && (
+              <button
+                onClick={onApplyCrop}
+                className="w-full py-2 bg-[#4b9fef] hover:bg-[#3b8fe0] text-black font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2.5"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                Apply Crop Selection
+              </button>
+            )}
 
             {/* Aspect Ratio Presets */}
             <div className="space-y-2">
@@ -485,7 +694,9 @@ export default function RightPanel({
               <div className="flex justify-between text-xs">
                 <span className="text-[#9a9d9a]">Straighten Angle</span>
                 <span className="text-[#4b9fef] font-bold">
-                  {transformState.straighten ? `${transformState.straighten > 0 ? "+" : ""}${transformState.straighten}°` : "0°"}
+                  {transformState.straighten
+                    ? `${transformState.straighten > 0 ? "+" : ""}${transformState.straighten}°`
+                    : "0°"}
                 </span>
               </div>
               <input
@@ -529,7 +740,9 @@ export default function RightPanel({
                 <button
                   onClick={handleFlipH}
                   className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer ${
-                    transformState.flipH ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]" : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
+                    transformState.flipH
+                      ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]"
+                      : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
                   }`}
                 >
                   ⇄ Flip H
@@ -537,7 +750,9 @@ export default function RightPanel({
                 <button
                   onClick={handleFlipV}
                   className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer ${
-                    transformState.flipV ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]" : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
+                    transformState.flipV
+                      ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]"
+                      : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
                   }`}
                 >
                   ⇅ Flip V
@@ -547,30 +762,105 @@ export default function RightPanel({
           </div>
         )}
 
-        {/* 5. LOOKS & PRESETS */}
+        {/* 5. PROFESSIONAL PRESETS & LOOKS BROWSER */}
         {activeTool === "filter" && (
           <div className="space-y-4">
-            <span className="text-xs font-bold text-[#f0f0ec]">SNAPSEED LOOKS</span>
-            <p className="text-[11px] text-[#9a9d9a]">
-              One-tap non-destructive film and color grading profiles.
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {PRESET_LOOKS.map((look) => (
+            <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
+              <div>
+                <span className="text-xs font-bold text-[#f0f0ec]">PRESET PROFILES</span>
+                <p className="text-[10px] text-[#9a9d9a]">Non-destructive photographic grades</p>
+              </div>
+              {onResetAdjustments && (
                 <button
-                  key={look.id}
-                  onClick={() => onApplyLookPreset && onApplyLookPreset(look)}
-                  className="p-2.5 rounded bg-[#18191e] border border-[#26272b] hover:border-[#4b9fef] text-left transition-all cursor-pointer group flex flex-col gap-1"
+                  onClick={onResetAdjustments}
+                  className="text-[10px] text-[#4b9fef] hover:underline cursor-pointer"
                 >
-                  <div className={`w-full h-10 rounded bg-gradient-to-br ${look.previewBg} border border-white/10 flex items-end p-1`}>
-                    <span className="text-[9px] font-bold px-1 bg-black/60 rounded text-[#f0f0ec]">
-                      {look.tag}
-                    </span>
-                  </div>
-                  <span className="text-xs text-[#f0f0ec] group-hover:text-[#4b9fef] font-bold truncate">
-                    {look.name}
-                  </span>
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex flex-wrap gap-1">
+              {PRESET_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setPresetCategory(cat)}
+                  className={`
+                    px-2 py-0.5 text-[10px] rounded-full border transition-colors cursor-pointer
+                    ${
+                      presetCategory === cat
+                        ? "bg-[#4b9fef] text-black border-[#4b9fef] font-bold"
+                        : "bg-[#18191e] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+                    }
+                  `}
+                >
+                  {cat}
                 </button>
               ))}
+            </div>
+
+            {/* Preset Intensity Slider */}
+            {selectedPresetId && (
+              <div className="p-3 bg-[#18191e] border border-[#4b9fef]/30 rounded-lg space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Preset Intensity</span>
+                  <span className="text-[#4b9fef] font-bold">{presetIntensity}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="150"
+                  value={presetIntensity}
+                  onChange={(e) => handleIntensityChange(Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+            )}
+
+            {/* Preset Cards Grid */}
+            <div className="grid grid-cols-1 gap-2.5">
+              {filteredPresets.map((preset) => {
+                const isSelected = selectedPresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => handlePresetClick(preset)}
+                    className={`
+                      p-3 rounded-lg bg-[#18191e] border text-left transition-all cursor-pointer group flex flex-col gap-1.5
+                      ${
+                        isSelected
+                          ? "border-[#4b9fef] ring-1 ring-[#4b9fef] bg-[#4b9fef]/5"
+                          : "border-[#26272b] hover:border-[#4b9fef]/60"
+                      }
+                    `}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-4 h-4 rounded-full bg-gradient-to-br ${preset.previewBg || "from-sky-500 to-indigo-600"}`}
+                        />
+                        <span
+                          className={`text-xs font-bold ${
+                            isSelected ? "text-[#4b9fef]" : "text-[#f0f0ec] group-hover:text-[#4b9fef]"
+                          }`}
+                        >
+                          {preset.name}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 bg-black/60 rounded text-[#9a9d9a] border border-white/10">
+                        {preset.tag || preset.category.toUpperCase()}
+                      </span>
+                    </div>
+
+                    {preset.description && (
+                      <p className="text-[10px] text-[#9a9d9a] line-clamp-2 leading-relaxed">
+                        {preset.description}
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -704,7 +994,7 @@ export default function RightPanel({
             {isDoubleExposureSelected && selectedLayer && selectedLayer.doubleExposureData && (
               <div className="p-3 bg-[#18191e] border border-[#4b9fef]/40 rounded-lg space-y-3">
                 <span className="text-xs font-bold text-[#4b9fef]">Double Exposure Settings</span>
-                
+
                 {/* Opacity */}
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs text-[#9a9d9a]">
@@ -871,7 +1161,12 @@ export default function RightPanel({
               className="w-full py-3 bg-[#4b9fef] text-black font-bold rounded text-xs hover:bg-[#3b8fe0] transition-colors cursor-pointer mt-4 shadow-lg flex items-center justify-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                />
               </svg>
               Download Full-Res Photo
             </button>

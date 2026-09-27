@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useCanvas, DEFAULT_ADJUSTMENTS } from "@/hooks/useCanvas";
+import { useCanvas, DEFAULT_ADJUSTMENTS, TransformState } from "@/hooks/useCanvas";
 import {
   ToolType,
   Adjustments,
@@ -12,13 +12,14 @@ import {
   ExportSettings,
   CurvesData,
   SelectivePoint,
+  PhotoPreset,
 } from "@/types/editor";
 import TopBar from "@/components/TopBar";
 import LeftToolbar from "@/components/LeftToolbar";
 import CenterCanvas from "@/components/CenterCanvas";
 import RightPanel from "@/components/RightPanel";
 import BottomBar from "@/components/BottomBar";
-import FilterPresetsStrip, { PremiumLookPreset } from "@/components/FilterPresetsStrip";
+import FilterPresetsStrip from "@/components/FilterPresetsStrip";
 import ShortcutsOverlay from "@/components/ShortcutsOverlay";
 import { DEFAULT_CURVES } from "@/components/CurvesTool";
 import { useToast } from "@/components/Toast";
@@ -29,7 +30,17 @@ interface HistoryEntry {
   curves: CurvesData;
   selectivePoints: SelectivePoint[];
   layers: LayerItem[];
+  transform: TransformState;
 }
+
+const DEFAULT_TRANSFORM: TransformState = {
+  rotation: 0,
+  straighten: 0,
+  flipH: false,
+  flipV: false,
+  aspectRatioPreset: "free",
+  crop: null,
+};
 
 export default function Home() {
   const { toast: showToast } = useToast();
@@ -47,7 +58,6 @@ export default function Home() {
     updateLayers,
     samplePixelWhiteBalance,
     exportImage,
-    transformState,
     filterSettings,
     renderPipeline,
   } = useCanvas();
@@ -71,6 +81,7 @@ export default function Home() {
   const [selectivePoints, setSelectivePoints] = useState<SelectivePoint[]>([]);
   const [selectedSelectivePointId, setSelectedSelectivePointId] = useState<string | null>(null);
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
+  const [transform, setTransform] = useState<TransformState>({ ...DEFAULT_TRANSFORM });
 
   // Layers & Export
   const [layers, setLayers] = useState<LayerItem[]>([]);
@@ -99,6 +110,7 @@ export default function Home() {
         curves: newEntry.curves ?? curves,
         selectivePoints: newEntry.selectivePoints ?? selectivePoints,
         layers: newEntry.layers ?? layers,
+        transform: newEntry.transform ?? transform,
       };
 
       setHistory((prev) => {
@@ -107,7 +119,7 @@ export default function Home() {
       });
       setHistoryIndex((prev) => prev + 1);
     },
-    [adjustments, filterSettings, curves, selectivePoints, layers, historyIndex]
+    [adjustments, filterSettings, curves, selectivePoints, layers, transform, historyIndex]
   );
 
   /**
@@ -125,6 +137,12 @@ export default function Home() {
       updateSelectivePoints(prev.selectivePoints);
       setLayers(prev.layers);
       updateLayers(prev.layers);
+
+      if (prev.transform) {
+        setTransform(prev.transform);
+        updateTransform(prev.transform);
+      }
+
       setHistoryIndex(historyIndex - 1);
       showToast("Undo", "info");
     }
@@ -136,6 +154,7 @@ export default function Home() {
     updateCurves,
     updateSelectivePoints,
     updateLayers,
+    updateTransform,
     showToast,
   ]);
 
@@ -154,6 +173,12 @@ export default function Home() {
       updateSelectivePoints(next.selectivePoints);
       setLayers(next.layers);
       updateLayers(next.layers);
+
+      if (next.transform) {
+        setTransform(next.transform);
+        updateTransform(next.transform);
+      }
+
       setHistoryIndex(historyIndex + 1);
       showToast("Redo", "info");
     }
@@ -165,6 +190,7 @@ export default function Home() {
     updateCurves,
     updateSelectivePoints,
     updateLayers,
+    updateTransform,
     showToast,
   ]);
 
@@ -196,6 +222,7 @@ export default function Home() {
         setCurves({ ...DEFAULT_CURVES });
         setSelectivePoints([]);
         setSelectedSelectivePointId(null);
+        setTransform({ ...DEFAULT_TRANSFORM });
         setLayers(initialLayers);
         updateLayers(initialLayers);
         setHasImage(true);
@@ -207,6 +234,7 @@ export default function Home() {
           curves: { ...DEFAULT_CURVES },
           selectivePoints: [],
           layers: initialLayers,
+          transform: { ...DEFAULT_TRANSFORM },
         };
         setHistory([initialEntry]);
         setHistoryIndex(0);
@@ -362,43 +390,91 @@ export default function Home() {
   );
 
   /**
-   * Non-destructive Look Preset Handler
+   * Non-destructive Professional Photo Preset Handler (with optional intensity scaling)
    */
-  const handleApplyLookPreset = useCallback(
-    (look: PremiumLookPreset) => {
+  const handleApplyPreset = useCallback(
+    (preset: PhotoPreset, intensity: number = 100) => {
+      const factor = intensity / 100;
+      const base = DEFAULT_ADJUSTMENTS;
+      const target = preset.adjustments;
+
       const nextAdj: Adjustments = {
-        ...adjustments,
-        ...(look.adjustments || {}),
-        temperature: look.temperature ?? look.adjustments?.temperature ?? adjustments.temperature,
-        tint: look.tint ?? look.adjustments?.tint ?? adjustments.tint,
-        structure: look.structure ?? look.adjustments?.structure ?? adjustments.structure,
-        vignette: look.vignette ?? look.adjustments?.vignette ?? adjustments.vignette,
-        grain: look.grain ?? look.adjustments?.grain ?? adjustments.grain,
+        exposure: Math.round(base.exposure + (target.exposure - base.exposure) * factor),
+        brightness: Math.round(base.brightness + (target.brightness - base.brightness) * factor),
+        contrast: Math.round(base.contrast + (target.contrast - base.contrast) * factor),
+        highlights: Math.round(base.highlights + (target.highlights - base.highlights) * factor),
+        shadows: Math.round(base.shadows + (target.shadows - base.shadows) * factor),
+        whites: Math.round(base.whites + (target.whites - base.whites) * factor),
+        blacks: Math.round(base.blacks + (target.blacks - base.blacks) * factor),
+        saturation: Math.round(base.saturation + (target.saturation - base.saturation) * factor),
+        vibrance: Math.round(base.vibrance + (target.vibrance - base.vibrance) * factor),
+        temperature: Math.round(base.temperature + (target.temperature - base.temperature) * factor),
+        tint: Math.round(base.tint + (target.tint - base.tint) * factor),
+        sharpness: Math.round(base.sharpness + (target.sharpness - base.sharpness) * factor),
+        clarity: Math.round(base.clarity + (target.clarity - base.clarity) * factor),
+        blur: Math.round(base.blur + (target.blur - base.blur) * factor),
+        grain: Math.round(base.grain + (target.grain - base.grain) * factor),
+        vignette: Math.round(base.vignette + (target.vignette - base.vignette) * factor),
       };
 
-      const nextCurves: CurvesData = look.curvePreset || curves;
+      const nextCurves: CurvesData = preset.curves || curves;
       const nextFilter: FilterSettings = {
-        id: look.id,
-        name: look.name,
+        id: preset.id,
+        name: preset.name,
         intensity: 100,
       };
 
       setAdjustments(nextAdj);
       updateAdjustments(nextAdj);
-      setCurves(nextCurves);
-      updateCurves(nextCurves);
+      if (preset.curves) {
+        setCurves(nextCurves);
+        updateCurves(nextCurves);
+      }
       updateFilter(nextFilter);
 
       pushHistory({
         adjustments: nextAdj,
-        curves: nextCurves,
+        curves: preset.curves ? nextCurves : undefined,
         filter: nextFilter,
       });
 
-      showToast(`Applied Look: ${look.name}`, "success");
+      showToast(`Applied preset: ${preset.name}`, "success");
     },
-    [adjustments, curves, updateAdjustments, updateCurves, updateFilter, pushHistory, showToast]
+    [curves, updateAdjustments, updateCurves, updateFilter, pushHistory, showToast]
   );
+
+  /**
+   * Transform & Crop Handlers with Full History Tracking
+   */
+  const handleUpdateTransform = useCallback(
+    (newTransform: Partial<TransformState>) => {
+      const next = { ...transform, ...newTransform };
+      setTransform(next);
+      updateTransform(newTransform);
+      pushHistory({ transform: next });
+    },
+    [transform, updateTransform, pushHistory]
+  );
+
+  const handleApplyCrop = useCallback(
+    (crop: { x: number; y: number; width: number; height: number }) => {
+      const next = { ...transform, crop };
+      setTransform(next);
+      updateTransform({ crop });
+      pushHistory({ transform: next });
+      setActiveTool("select");
+      showToast("Applied crop", "success");
+    },
+    [transform, updateTransform, pushHistory, showToast]
+  );
+
+  const handleResetCrop = useCallback(() => {
+    const next = { ...transform, crop: null, aspectRatioPreset: "free" as const };
+    setTransform(next);
+    updateTransform({ crop: null, aspectRatioPreset: "free" });
+    pushHistory({ transform: next });
+    showToast("Reset crop to full photo", "info");
+  }, [transform, updateTransform, pushHistory, showToast]);
 
   /**
    * Double Exposure Layer Handler
@@ -642,7 +718,6 @@ export default function Home() {
    */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore keystrokes inside text inputs or editable areas
       const target = e.target as HTMLElement;
       if (
         target.tagName === "INPUT" ||
@@ -695,30 +770,39 @@ export default function Home() {
       switch (e.key.toLowerCase()) {
         case "v":
           setActiveTool("select");
+          setRightPanelCollapsed(false);
           break;
         case "s":
           setActiveTool("selective");
+          setRightPanelCollapsed(false);
           break;
         case "k":
           setActiveTool("curves");
+          setRightPanelCollapsed(false);
           break;
         case "a":
           setActiveTool("adjust");
+          setRightPanelCollapsed(false);
           break;
         case "c":
           setActiveTool("crop");
+          setRightPanelCollapsed(false);
           break;
         case "f":
           setActiveTool("filter");
+          setRightPanelCollapsed(false);
           break;
         case "t":
           setActiveTool("text");
+          setRightPanelCollapsed(false);
           break;
         case "l":
           setActiveTool("layers");
+          setRightPanelCollapsed(false);
           break;
         case "e":
           setActiveTool("export");
+          setRightPanelCollapsed(false);
           break;
         case "0":
           handleZoomFit();
@@ -749,14 +833,10 @@ export default function Home() {
     handleZoomOut,
   ]);
 
-  const handleApplyCrop = useCallback(
-    (crop: { x: number; y: number; width: number; height: number }) => {
-      updateTransform({ crop });
-      setActiveTool("select");
-      showToast("Applied crop", "success");
-    },
-    [updateTransform, showToast]
-  );
+  const handleSelectTool = useCallback((tool: ToolType) => {
+    setActiveTool(tool);
+    setRightPanelCollapsed(false);
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0e0f12] text-[#f0f0ec] overflow-hidden font-mono antialiased">
@@ -775,12 +855,13 @@ export default function Home() {
           updateGridMode(mode);
         }}
         onExport={handleTriggerExport}
+        onFileSelect={handleImageSelect}
       />
 
       {/* Main Studio Workspace */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Left Vertical Tool Selector */}
-        <LeftToolbar activeTool={activeTool} onSelectTool={setActiveTool} />
+        <LeftToolbar activeTool={activeTool} onSelectTool={handleSelectTool} />
 
         {/* Center Interactive Canvas */}
         <CenterCanvas
@@ -797,12 +878,13 @@ export default function Home() {
           selectivePoints={selectivePoints}
           selectedSelectivePointId={selectedSelectivePointId}
           isEyedropperActive={isEyedropperActive}
-          transformState={transformState}
+          transformState={transform}
           onSelectLayer={(id) => {
             setSelectedLayerId(id);
             if (id) {
               const l = layers.find((item) => item.id === id);
               if (l?.type === "text") setActiveTool("text");
+              setRightPanelCollapsed(false);
             }
           }}
           onSelectSelectivePoint={setSelectedSelectivePointId}
@@ -839,9 +921,16 @@ export default function Home() {
             updateFilter(f);
             pushHistory({ filter: f });
           }}
-          onApplyLookPreset={handleApplyLookPreset}
-          transformState={transformState}
-          onUpdateTransform={(t) => updateTransform(t)}
+          onApplyPreset={handleApplyPreset}
+          transformState={transform}
+          onUpdateTransform={handleUpdateTransform}
+          onResetCrop={handleResetCrop}
+          onApplyCrop={() => {
+            // Can be triggered from panel
+            if (transform.crop) {
+              handleApplyCrop(transform.crop);
+            }
+          }}
           layers={layers}
           selectedLayerId={selectedLayerId}
           onSelectLayer={setSelectedLayerId}
@@ -866,7 +955,7 @@ export default function Home() {
       {hasImage && activeTool === "filter" && (
         <FilterPresetsStrip
           selectedPresetId={filterSettings.id}
-          onSelectPreset={handleApplyLookPreset}
+          onSelectPreset={handleApplyPreset}
         />
       )}
 

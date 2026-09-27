@@ -12,15 +12,35 @@ export type ToolType =
 export type GridMode = "none" | "grid" | "thirds";
 
 export interface Adjustments {
+  exposure: number; // -100 to 100 (maps to -5 EV to +5 EV)
   brightness: number; // -100 to 100
   contrast: number; // -100 to 100
+  highlights: number; // -100 to 100
+  shadows: number; // -100 to 100
+  whites: number; // -100 to 100
+  blacks: number; // -100 to 100
   saturation: number; // -100 to 100
-  exposure: number; // -100 to 100
+  vibrance: number; // -100 to 100
   temperature: number; // -100 (Cool/Blue) to 100 (Warm/Amber)
   tint: number; // -100 (Green) to 100 (Magenta)
-  structure: number; // -100 (Soft/Smooth) to 100 (High Texture/Clarity)
-  vignette: number; // -100 (Lighten edges) to 100 (Darken edges)
-  grain: number; // 0 to 100 (Film grain)
+  sharpness: number; // 0 to 100
+  clarity: number; // -100 to 100
+  blur: number; // 0 to 100
+  grain: number; // 0 to 100
+  vignette: number; // -100 (Lighten) to 100 (Darken)
+  structure?: number; // legacy alias for clarity
+}
+
+export interface CurvePoint {
+  x: number; // 0 to 255
+  y: number; // 0 to 255
+}
+
+export interface CurvesData {
+  rgb: CurvePoint[];
+  red: CurvePoint[];
+  green: CurvePoint[];
+  blue: CurvePoint[];
 }
 
 export interface SelectivePoint {
@@ -34,16 +54,40 @@ export interface SelectivePoint {
   structure: number; // -100 to 100
 }
 
-export interface CurvePoint {
-  x: number; // 0 to 255
-  y: number; // 0 to 255
-}
+export type PresetCategory =
+  | "Recommended"
+  | "Portrait"
+  | "Product"
+  | "Lifestyle"
+  | "Cinematic"
+  | "Black & White";
 
-export interface CurvesData {
-  rgb: CurvePoint[];
-  red: CurvePoint[];
-  green: CurvePoint[];
-  blue: CurvePoint[];
+export interface PhotoPreset {
+  id: string;
+  name: string;
+  category: PresetCategory;
+  description?: string;
+  tag?: string;
+  previewBg?: string;
+  adjustments: {
+    exposure: number;
+    brightness: number;
+    contrast: number;
+    highlights: number;
+    shadows: number;
+    whites: number;
+    blacks: number;
+    saturation: number;
+    vibrance: number;
+    temperature: number;
+    tint: number;
+    sharpness: number;
+    clarity: number;
+    blur: number;
+    grain: number;
+    vignette: number;
+  };
+  curves?: CurvesData;
 }
 
 export interface FilterSettings {
