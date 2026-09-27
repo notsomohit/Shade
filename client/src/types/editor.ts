@@ -16,7 +16,17 @@ export interface Adjustments {
 export interface PresetFilter {
   id: string;
   name: string;
-  previewBg: string; // Tailwind gradient or CSS string for thumbnail preview
+  previewBg: string;
+}
+
+export interface TextOverlay {
+  id: string;
+  text: string;
+  fontSize: number; // px
+  color: string; // hex/rgb
+  x: number; // normalized 0 to 1
+  y: number; // normalized 0 to 1
+  visible: boolean;
 }
 
 export interface LayerItem {
@@ -24,6 +34,7 @@ export interface LayerItem {
   name: string;
   visible: boolean;
   type: "image" | "text" | "adjustment";
+  textData?: TextOverlay;
 }
 
 export interface ImageMetaData {

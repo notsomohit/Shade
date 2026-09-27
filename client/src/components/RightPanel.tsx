@@ -1,38 +1,150 @@
 "use client";
 
-import { ToolType, Adjustments, LayerItem } from "@/types/editor";
+import { useState } from "react";
+import { ToolType, Adjustments, LayerItem, TextOverlay } from "@/types/editor";
+import { TransformState } from "@/hooks/useCanvas";
 
 interface RightPanelProps {
   activeTool: ToolType;
   adjustments: Adjustments;
   onChangeAdjustment: (key: keyof Adjustments, value: number) => void;
+  transformState: TransformState;
+  onUpdateTransform: (transform: Partial<TransformState>) => void;
   layers: LayerItem[];
   selectedLayerId: string | null;
   onSelectLayer: (id: string) => void;
   onToggleLayerVisibility: (id: string) => void;
+  onAddTextLayer: (text: string, fontSize: number, color: string) => void;
 }
 
 export default function RightPanel({
   activeTool,
   adjustments,
   onChangeAdjustment,
+  transformState,
+  onUpdateTransform,
   layers,
   selectedLayerId,
   onSelectLayer,
   onToggleLayerVisibility,
+  onAddTextLayer,
 }: RightPanelProps) {
+  // Text tool local inputs
+  const [textInput, setTextInput] = useState("StudioNorth");
+  const [fontSizeInput, setFontSizeInput] = useState(48);
+  const [textColorInput, setTextColorInput] = useState("#4b9fef");
+
+  const handleRotateCW = () => {
+    const nextRot = (transformState.rotation + 90) % 360;
+    onUpdateTransform({ rotation: nextRot });
+  };
+
+  const handleRotateCCW = () => {
+    const nextRot = (transformState.rotation + 270) % 360;
+    onUpdateTransform({ rotation: nextRot });
+  };
+
+  const handleFlipH = () => {
+    onUpdateTransform({ flipH: !transformState.flipH });
+  };
+
+  const handleFlipV = () => {
+    onUpdateTransform({ flipV: !transformState.flipV });
+  };
+
+  const handleResetCrop = () => {
+    onUpdateTransform({ crop: null, rotation: 0, flipH: false, flipV: false });
+  };
+
+  const handleAddText = () => {
+    if (!textInput.trim()) return;
+    onAddTextLayer(textInput, fontSizeInput, textColorInput);
+  };
+
+  const colorPresets = [
+    { name: "Blue", hex: "#4b9fef" },
+    { name: "White", hex: "#ffffff" },
+    { name: "Yellow", hex: "#facc15" },
+    { name: "Red", hex: "#f87171" },
+    { name: "Green", hex: "#4ade80" },
+  ];
+
   const renderContent = () => {
     switch (activeTool) {
+      case "text":
+        return (
+          <div className="flex flex-col gap-4 font-mono text-xs">
+            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
+              TEXT TOOL
+            </div>
+
+            {/* Text Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#9a9d9a]">TEXT CONTENT</label>
+              <input
+                type="text"
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Enter text..."
+                className="w-full px-2.5 py-2 bg-[#0e0f12] border border-[#26272b] focus:border-[#4b9fef] text-[#f0f0ec] rounded outline-none text-xs"
+              />
+            </div>
+
+            {/* Font Size Slider */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-[#9a9d9a]">FONT SIZE</span>
+                <span className="text-[#4b9fef] font-bold">{fontSizeInput}px</span>
+              </div>
+              <input
+                type="range"
+                min="16"
+                max="120"
+                value={fontSizeInput}
+                onChange={(e) => setFontSizeInput(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            {/* Text Color Picker / Presets */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#9a9d9a]">TEXT COLOR</label>
+              <div className="flex items-center gap-2">
+                {colorPresets.map((c) => (
+                  <button
+                    key={c.hex}
+                    onClick={() => setTextColorInput(c.hex)}
+                    title={c.name}
+                    className={`w-6 h-6 rounded-full border transition-transform ${
+                      textColorInput === c.hex
+                        ? "ring-2 ring-white scale-110 border-white"
+                        : "border-[#26272b] hover:scale-105"
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Add Text Layer Button */}
+            <button
+              onClick={handleAddText}
+              className="w-full py-2 bg-[#4b9fef] text-[#0e0f12] font-bold text-xs rounded hover:bg-[#3b8fd9] transition-colors cursor-pointer mt-2"
+            >
+              + Add Text Layer
+            </button>
+          </div>
+        );
+
       case "adjust":
         return (
           <div className="flex flex-col gap-5 font-mono text-xs">
-            <div className="text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
+            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
               ADJUSTMENTS
             </div>
 
-            {/* Brightness Slider */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-[#9a9d9a]">BRIGHTNESS</span>
                 <span className="text-[#4b9fef] font-semibold">
                   {adjustments.brightness > 0 ? `+${adjustments.brightness}` : adjustments.brightness}
@@ -48,9 +160,8 @@ export default function RightPanel({
               />
             </div>
 
-            {/* Contrast Slider */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-[#9a9d9a]">CONTRAST</span>
                 <span className="text-[#4b9fef] font-semibold">
                   {adjustments.contrast > 0 ? `+${adjustments.contrast}` : adjustments.contrast}
@@ -66,9 +177,8 @@ export default function RightPanel({
               />
             </div>
 
-            {/* Saturation Slider */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-[#9a9d9a]">SATURATION</span>
                 <span className="text-[#4b9fef] font-semibold">
                   {adjustments.saturation > 0 ? `+${adjustments.saturation}` : adjustments.saturation}
@@ -84,9 +194,8 @@ export default function RightPanel({
               />
             </div>
 
-            {/* Exposure Slider */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-[#9a9d9a]">EXPOSURE</span>
                 <span className="text-[#4b9fef] font-semibold">
                   {adjustments.exposure > 0 ? `+${adjustments.exposure}` : adjustments.exposure}
@@ -107,18 +216,54 @@ export default function RightPanel({
       case "crop":
         return (
           <div className="flex flex-col gap-4 font-mono text-xs">
-            <div className="text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
+            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
               CROP & TRANSFORM
             </div>
-            <div className="space-y-2 text-[11px] text-[#9a9d9a]">
-              <button className="w-full p-2 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer">
-                Rotate 90° CW
+            <div className="space-y-2 text-xs text-[#9a9d9a]">
+              <button
+                onClick={handleRotateCW}
+                className="w-full p-2.5 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer flex items-center justify-between"
+              >
+                <span>Rotate 90° CW</span>
+                <span className="text-[#4b9fef] font-bold">{transformState.rotation}°</span>
               </button>
-              <button className="w-full p-2 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer">
-                Flip Horizontal
+
+              <button
+                onClick={handleRotateCCW}
+                className="w-full p-2.5 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer"
+              >
+                Rotate 90° CCW
               </button>
-              <button className="w-full p-2 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer">
-                Flip Vertical
+
+              <button
+                onClick={handleFlipH}
+                className={`w-full p-2.5 border rounded text-left transition-colors cursor-pointer flex items-center justify-between ${
+                  transformState.flipH
+                    ? "border-[#4b9fef] text-[#4b9fef] bg-[#4b9fef]/10"
+                    : "border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                }`}
+              >
+                <span>Flip Horizontal</span>
+                {transformState.flipH && <span className="font-bold">ON</span>}
+              </button>
+
+              <button
+                onClick={handleFlipV}
+                className={`w-full p-2.5 border rounded text-left transition-colors cursor-pointer flex items-center justify-between ${
+                  transformState.flipV
+                    ? "border-[#4b9fef] text-[#4b9fef] bg-[#4b9fef]/10"
+                    : "border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                }`}
+              >
+                <span>Flip Vertical</span>
+                {transformState.flipV && <span className="font-bold">ON</span>}
+              </button>
+
+              <button
+                onClick={handleResetCrop}
+                className="w-full p-2.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded text-left transition-colors cursor-pointer mt-4"
+              >
+                Reset Transforms
               </button>
             </div>
           </div>
@@ -127,31 +272,27 @@ export default function RightPanel({
       case "filter":
         return (
           <div className="flex flex-col gap-3 font-mono text-xs">
-            <div className="text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
+            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
               FILTER CONTROLS
             </div>
-            <p className="text-[11px] text-[#9a9d9a]/70">
-              Select presets from the bottom strip or adjust filter intensity.
+            <p className="text-xs text-[#9a9d9a]/80 leading-relaxed">
+              Select preset filters from the bottom strip below canvas to apply real-time LUT styling.
             </p>
           </div>
         );
 
       case "layers":
       case "select":
-      case "text":
       default:
         return (
           <div className="flex flex-col h-full font-mono text-xs">
-            <div className="flex items-center justify-between text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2 mb-3">
+            <div className="flex items-center justify-between text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2 mb-3">
               <span>LAYERS ({layers.length})</span>
-              <button className="hover:text-[#4b9fef] cursor-pointer text-sm">
-                +
-              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-1.5">
+            <div className="flex-1 overflow-y-auto space-y-2">
               {layers.length === 0 ? (
-                <div className="text-[11px] text-[#9a9d9a]/50 py-4 text-center border border-dashed border-[#26272b] rounded">
+                <div className="text-xs text-[#9a9d9a]/50 py-4 text-center border border-dashed border-[#26272b] rounded">
                   NO LAYERS
                 </div>
               ) : (
@@ -162,7 +303,7 @@ export default function RightPanel({
                       key={layer.id}
                       onClick={() => onSelectLayer(layer.id)}
                       className={`
-                        flex items-center justify-between px-2.5 py-2 cursor-pointer text-[11px] transition-colors rounded border
+                        flex items-center justify-between px-3 py-2.5 cursor-pointer text-xs transition-colors rounded border
                         ${
                           isSelected
                             ? "bg-[#4b9fef]/10 text-[#f0f0ec] border-[#4b9fef]/40"
@@ -171,20 +312,24 @@ export default function RightPanel({
                       `}
                     >
                       <div className="flex items-center gap-2 truncate">
-                        <svg
-                          className="w-3.5 h-3.5 shrink-0 text-[#4b9fef]"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-                          />
-                        </svg>
-                        <span className="truncate">{layer.name}</span>
+                        {layer.type === "text" ? (
+                          <span className="font-bold text-[#4b9fef] text-sm shrink-0">T</span>
+                        ) : (
+                          <svg
+                            className="w-4 h-4 shrink-0 text-[#4b9fef]"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
+                            />
+                          </svg>
+                        )}
+                        <span className="truncate font-medium">{layer.name}</span>
                       </div>
 
                       <button
@@ -196,7 +341,7 @@ export default function RightPanel({
                       >
                         {layer.visible ? (
                           <svg
-                            className="w-3.5 h-3.5 text-[#f0f0ec]"
+                            className="w-4 h-4 text-[#f0f0ec]"
                             fill="none"
                             stroke="currentColor"
                             strokeWidth="1.5"
@@ -215,7 +360,7 @@ export default function RightPanel({
                           </svg>
                         ) : (
                           <svg
-                            className="w-3.5 h-3.5 text-[#9a9d9a]/30"
+                            className="w-4 h-4 text-[#9a9d9a]/30"
                             fill="none"
                             stroke="currentColor"
                             strokeWidth="1.5"
@@ -240,7 +385,7 @@ export default function RightPanel({
   };
 
   return (
-    <aside className="w-[210px] border-l border-[#26272b] bg-[#131418] p-3.5 flex flex-col shrink-0 font-mono select-none">
+    <aside className="w-[210px] border-l border-[#26272b] bg-[#131418] p-4 flex flex-col shrink-0 font-mono select-none">
       {renderContent()}
     </aside>
   );

@@ -1,37 +1,33 @@
 # StudioNorth
 
-A browser-based photo editing app with non-destructive adjustments, filters, crop tools, and project persistence.
+A browser-based photo editing app with non-destructive adjustments, filters, crop tools, text overlay engine, and project persistence.
 
 ## Tech Stack
 
 - **Frontend:** Next.js 16 (React 19, App Router, Tailwind CSS v4)
 - **Backend:** Node.js / Express with TypeScript
-- **Canvas:** HTML5 Canvas for client-side image manipulation
+- **Canvas Engine:** Client-side HTML5 Canvas pixel & vector manipulation pipeline
 
-## Visual Design & Systems
+## Core Features Implemented
 
-- **Single Full-Screen Editor:** User lands directly into the editor UI shell at `/`.
-- **Restrained Dark System:**
-  - Page/Canvas area background: `#0e0f12`
-  - Chrome panels (Top bar, Left toolbar, Right panel, Bottom bar): `#131418`
-  - Canvas well: `#0a0a0c`
-  - Hairline borders throughout: `#26272b`
-  - Text: Primary `#f0f0ec`, Secondary `#9a9d9a`
-  - **Single Accent Color:** `#4b9fef` (Blue) — reserved exclusively for active tool indicators, primary Export button, live slider fills, preset selection ring, and user avatar.
-- **Monospace Typography:** `ui-monospace`, `Courier New` throughout.
-
-## Component Architecture
-
-1. `TopBar.tsx`: Geometric logo mark, `STUDIONORTH` wordmark, top menu headers, working Undo/Redo buttons (with disabled logic), and primary `Export` button.
-2. `LeftToolbar.tsx`: `52px` fixed-width column with outline icons, accent blue active state, and hover tooltips (`Crop (C)`, `Select (V)`, etc.). Supports global keyboard hotkeys (`V`, `C`, `A`, `F`, `T`, `L`, `Ctrl+Z`, `Ctrl+Y`).
-3. `CenterCanvas.tsx`: Deep recessed canvas well (`#0a0a0c`).
-   - **Empty State**: Dashed box with centered `+` icon, bold "No image loaded", drag/drop & click-to-upload targets.
-   - **Compare Mode**: Top toggle switch enabling a draggable `Before` / `After` split slider (clamped 4%–96%) with circular grip handle and corner labels.
-4. `FilterPresetsStrip.tsx`: Horizontal scrollable preset strip (`Original`, `Vintage`, `Cool`, `Mono`, `Warm`, `Dramatic`, `Cyber`) with accent blue selection ring.
-5. `RightPanel.tsx`: `210px` contextual panel:
-   - **Adjustments View**: Live sliders (`Brightness`, `Contrast`, `Saturation`, `Exposure`) with numeric value readouts in accent blue and custom range tracks.
-   - **Layers View**: Layer stack items with visibility toggles.
-6. `BottomBar.tsx`: Zoom scale controls (`-`, `%`, `+`), filename readout, and `SN` accent avatar circle.
+1. **Clip-Path Draggable Compare Slider**:
+   - Two stacked canvas layers: **Original (Before)** on bottom layer, **Edited (After)** on top layer.
+   - Top layer clipped via `clipPath: inset(0 ${100 - dividerPercent}% 0 0)`. Zero image distortion or resizing.
+   - Dragging right (e.g. 80%) reveals 80% After on left, 20% Before on right.
+   - Dragging left (e.g. 30%) reveals 30% After on left, 70% Before on right.
+   - Smooth mouse & mobile touch event handling (`mousedown`, `mousemove`, `mouseup`, `touchstart`, `touchmove`, `touchend`).
+   - Click anywhere on track to jump divider; 2% to 98% clamping.
+   - Subtle low-opacity corner labels (`text-white/40`) for `AFTER` (left) and `BEFORE` (right).
+2. **Interactive Text Overlay Tool (Phase 4 / Text Engine)**:
+   - **Text (T)** tool added to Left Toolbar.
+   - Text input field, font size slider (16px–120px), color palette selector (`#4b9fef`, `#ffffff`, `#facc15`, `#f87171`, `#4ade80`).
+   - Pushes text overlay layers directly onto the HTML5 Canvas pipeline and into the Layers panel stack with visibility toggles.
+3. **Non-Destructive Core Adjustments**:
+   - Live non-destructive pixel adjustments for `Brightness`, `Contrast`, `Saturation`, `Exposure`.
+4. **Crop & Transform Engine**:
+   - Rotate 90° CW / CCW, Flip Horizontal, Flip Vertical, and Crop Area application.
+5. **Enlarged Bottom UI**:
+   - Taller preset strip (`h-24`), larger thumbnail boxes (`w-16 h-12`), taller status bar (`h-10`) with bigger zoom `-` / `+` touch targets.
 
 ## Getting Started
 
@@ -43,7 +39,7 @@ npm install
 cp .env.example .env
 
 # 3. Run client + server in dev mode
-npm run dev:client   # → http://localhost:3000 (or 3001 if port in use)
+npm run dev:client   # → http://localhost:3000 (or 3001/3002 if port in use)
 npm run dev:server   # → http://localhost:4000
 ```
 
@@ -51,9 +47,9 @@ npm run dev:server   # → http://localhost:4000
 
 - [x] Phase 0 — Project setup
 - [x] Phase 1 — Image upload + full-screen editor shell redesign
-- [ ] Phase 2 — Core adjustments (brightness, contrast, etc.)
-- [ ] Phase 3 — Crop + transform
-- [ ] Phase 4 — Filters
+- [x] Phase 2 — Core adjustments (brightness, contrast, saturation, exposure)
+- [x] Phase 3 — Crop + transform (rotate 90°, flip H/V, crop overlay)
+- [x] Phase 4 — Text tool & Filter presets engine
 - [ ] Phase 5 — Undo/redo + history
 - [ ] Phase 6 — Export
 - [ ] Phase 7 — Auth

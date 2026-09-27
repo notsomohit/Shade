@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useCanvas } from "@/hooks/useCanvas";
-import { ToolType, Adjustments, LayerItem, ImageMetaData } from "@/types/editor";
+import { ToolType, Adjustments, LayerItem, ImageMetaData, TextOverlay } from "@/types/editor";
 import TopBar from "@/components/TopBar";
 import LeftToolbar from "@/components/LeftToolbar";
 import CenterCanvas from "@/components/CenterCanvas";
@@ -18,7 +18,17 @@ const INITIAL_ADJUSTMENTS: Adjustments = {
 };
 
 export default function Home() {
-  const { canvasRef, loadImage } = useCanvas();
+  const {
+    canvasRef,
+    beforeCanvasRef,
+    loadImage,
+    updateAdjustments,
+    updateTransform,
+    updateTextOverlays,
+    transformState,
+    renderPipeline,
+  } = useCanvas();
+
   const [activeTool, setActiveTool] = useState<ToolType>("select");
   const [zoom, setZoom] = useState<number>(100);
   const [compareMode, setCompareMode] = useState<boolean>(false);
@@ -26,6 +36,7 @@ export default function Home() {
   const [imageData, setImageData] = useState<ImageMetaData | null>(null);
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
 
   // Adjustments & History Stack
   const [adjustments, setAdjustments] = useState<Adjustments>(INITIAL_ADJUSTMENTS);
@@ -46,25 +57,61 @@ export default function Home() {
     if (historyIndex > 0) {
       const prevIndex = historyIndex - 1;
       setHistoryIndex(prevIndex);
-      setAdjustments(history[prevIndex]);
+      const targetAdj = history[prevIndex];
+      setAdjustments(targetAdj);
+      updateAdjustments(targetAdj);
     }
-  }, [historyIndex, history]);
+  }, [historyIndex, history, updateAdjustments]);
 
   const handleRedo = useCallback(() => {
     if (historyIndex < history.length - 1) {
       const nextIndex = historyIndex + 1;
       setHistoryIndex(nextIndex);
-      setAdjustments(history[nextIndex]);
+      const targetAdj = history[nextIndex];
+      setAdjustments(targetAdj);
+      updateAdjustments(targetAdj);
     }
-  }, [historyIndex, history]);
+  }, [historyIndex, history, updateAdjustments]);
 
   const handleChangeAdjustment = (key: keyof Adjustments, value: number) => {
     const updated = { ...adjustments, [key]: value };
     setAdjustments(updated);
+    updateAdjustments(updated);
     pushHistory(updated);
   };
 
-  // Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Key tools)
+  const handleApplyCrop = (crop: { x: number; y: number; width: number; height: number }) => {
+    updateTransform({ crop });
+  };
+
+  const handleAddTextLayer = (text: string, fontSize: number, color: string) => {
+    const id = `text-${Date.now()}`;
+    const newOverlay: TextOverlay = {
+      id,
+      text,
+      fontSize,
+      color,
+      x: 0.1, // top-left offset inside canvas
+      y: 0.15 + textOverlays.length * 0.1,
+      visible: true,
+    };
+    const updatedOverlays = [...textOverlays, newOverlay];
+    setTextOverlays(updatedOverlays);
+    updateTextOverlays(updatedOverlays);
+
+    // Add to Layers list
+    const newLayerItem: LayerItem = {
+      id,
+      name: `Text: ${text}`,
+      visible: true,
+      type: "text",
+      textData: newOverlay,
+    };
+    setLayers((prev) => [newLayerItem, ...prev]);
+    setSelectedLayerId(id);
+  };
+
+  // Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Tool Hotkeys)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
@@ -118,6 +165,10 @@ export default function Home() {
           aspectRatio: img.naturalWidth / img.naturalHeight,
         };
         setImageData(meta);
+        setAdjustments(INITIAL_ADJUSTMENTS);
+        setHistory([INITIAL_ADJUSTMENTS]);
+        setHistoryIndex(0);
+        setTextOverlays([]);
 
         // Set base layer
         const baseLayer: LayerItem = {
@@ -140,13 +191,28 @@ export default function Home() {
   const handleResetZoom = () => setZoom(100);
 
   const handleToggleLayerVisibility = (id: string) => {
-    setLayers((prev) =>
-      prev.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l))
-    );
+    setLayers((prev) => {
+      const nextLayers = prev.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l));
+      const nextTextOverlays = textOverlays.map((t) =>
+        t.id === id ? { ...t, visible: !t.visible } : t
+      );
+      setTextOverlays(nextTextOverlays);
+      updateTextOverlays(nextTextOverlays);
+      return nextLayers;
+    });
   };
 
   const handleExport = () => {
-    alert("Export triggered! (Phase 6 full export engine)");
+    const canvas = canvasRef.current;
+    if (!canvas || !imageData) {
+      alert("No image loaded to export!");
+      return;
+    }
+    const dataUrl = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.download = `edited-${imageData.name}`;
+    link.href = dataUrl;
+    link.click();
   };
 
   return (
@@ -174,11 +240,15 @@ export default function Home() {
           {/* 3. Center Canvas Well */}
           <CenterCanvas
             canvasRef={canvasRef}
+            beforeCanvasRef={beforeCanvasRef}
             hasImage={!!imageData}
+            activeTool={activeTool}
             zoom={zoom}
             compareMode={compareMode}
             onToggleCompare={() => setCompareMode(!compareMode)}
             onImageSelect={handleImageSelect}
+            onApplyCrop={handleApplyCrop}
+            renderPipeline={renderPipeline}
           />
 
           {/* 4. Filter Presets Strip */}
@@ -193,10 +263,13 @@ export default function Home() {
           activeTool={activeTool}
           adjustments={adjustments}
           onChangeAdjustment={handleChangeAdjustment}
+          transformState={transformState}
+          onUpdateTransform={updateTransform}
           layers={layers}
           selectedLayerId={selectedLayerId}
           onSelectLayer={setSelectedLayerId}
           onToggleLayerVisibility={handleToggleLayerVisibility}
+          onAddTextLayer={handleAddTextLayer}
         />
       </div>
 
