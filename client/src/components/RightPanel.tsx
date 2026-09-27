@@ -1,9 +1,11 @@
 "use client";
 
-import { ToolType, LayerItem } from "@/types/editor";
+import { ToolType, Adjustments, LayerItem } from "@/types/editor";
 
 interface RightPanelProps {
   activeTool: ToolType;
+  adjustments: Adjustments;
+  onChangeAdjustment: (key: keyof Adjustments, value: number) => void;
   layers: LayerItem[];
   selectedLayerId: string | null;
   onSelectLayer: (id: string) => void;
@@ -12,108 +14,144 @@ interface RightPanelProps {
 
 export default function RightPanel({
   activeTool,
+  adjustments,
+  onChangeAdjustment,
   layers,
   selectedLayerId,
   onSelectLayer,
   onToggleLayerVisibility,
 }: RightPanelProps) {
-  // Render panel view based on selected tool
   const renderContent = () => {
     switch (activeTool) {
       case "adjust":
         return (
-          <div className="flex flex-col gap-4 text-xs font-mono">
-            <div className="text-[11px] text-[#8f938f] uppercase tracking-wider font-semibold border-b border-[#3a3d44] pb-2">
+          <div className="flex flex-col gap-5 font-mono text-xs">
+            <div className="text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
               ADJUSTMENTS
             </div>
-            <div className="space-y-3 text-[#8f938f]">
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span>BRIGHTNESS</span>
-                  <span className="text-[#e8e8e2]">0</span>
-                </div>
-                <div className="h-1 bg-[#3a3d44] w-full"></div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span>CONTRAST</span>
-                  <span className="text-[#e8e8e2]">0</span>
-                </div>
-                <div className="h-1 bg-[#3a3d44] w-full"></div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span>SATURATION</span>
-                  <span className="text-[#e8e8e2]">0</span>
-                </div>
-                <div className="h-1 bg-[#3a3d44] w-full"></div>
-              </div>
-            </div>
-          </div>
-        );
 
-      case "filter":
-        return (
-          <div className="flex flex-col gap-4 text-xs font-mono">
-            <div className="text-[11px] text-[#8f938f] uppercase tracking-wider font-semibold border-b border-[#3a3d44] pb-2">
-              PRESET FILTERS
+            {/* Brightness Slider */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[#9a9d9a]">BRIGHTNESS</span>
+                <span className="text-[#4b9fef] font-semibold">
+                  {adjustments.brightness > 0 ? `+${adjustments.brightness}` : adjustments.brightness}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-100"
+                max="100"
+                value={adjustments.brightness}
+                onChange={(e) => onChangeAdjustment("brightness", Number(e.target.value))}
+                className="w-full"
+              />
             </div>
-            <div className="space-y-1">
-              {["Normal", "B&W Mono", "Sepia Tone", "Vintage Film"].map(
-                (filterName, i) => (
-                  <div
-                    key={filterName}
-                    className={`px-2 py-1.5 cursor-pointer text-[11px] transition-colors ${
-                      i === 0
-                        ? "bg-[#3a3d44]/40 text-[#e8e8e2]"
-                        : "text-[#8f938f] hover:text-[#e8e8e2] hover:bg-[#3a3d44]/20"
-                    }`}
-                  >
-                    {filterName}
-                  </div>
-                )
-              )}
+
+            {/* Contrast Slider */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[#9a9d9a]">CONTRAST</span>
+                <span className="text-[#4b9fef] font-semibold">
+                  {adjustments.contrast > 0 ? `+${adjustments.contrast}` : adjustments.contrast}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-100"
+                max="100"
+                value={adjustments.contrast}
+                onChange={(e) => onChangeAdjustment("contrast", Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            {/* Saturation Slider */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[#9a9d9a]">SATURATION</span>
+                <span className="text-[#4b9fef] font-semibold">
+                  {adjustments.saturation > 0 ? `+${adjustments.saturation}` : adjustments.saturation}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-100"
+                max="100"
+                value={adjustments.saturation}
+                onChange={(e) => onChangeAdjustment("saturation", Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            {/* Exposure Slider */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[#9a9d9a]">EXPOSURE</span>
+                <span className="text-[#4b9fef] font-semibold">
+                  {adjustments.exposure > 0 ? `+${adjustments.exposure}` : adjustments.exposure}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-100"
+                max="100"
+                value={adjustments.exposure}
+                onChange={(e) => onChangeAdjustment("exposure", Number(e.target.value))}
+                className="w-full"
+              />
             </div>
           </div>
         );
 
       case "crop":
         return (
-          <div className="flex flex-col gap-4 text-xs font-mono">
-            <div className="text-[11px] text-[#8f938f] uppercase tracking-wider font-semibold border-b border-[#3a3d44] pb-2">
+          <div className="flex flex-col gap-4 font-mono text-xs">
+            <div className="text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
               CROP & TRANSFORM
             </div>
-            <div className="space-y-2 text-[11px] text-[#8f938f]">
-              <div className="p-2 border border-[#3a3d44] hover:text-[#e8e8e2] cursor-pointer">
+            <div className="space-y-2 text-[11px] text-[#9a9d9a]">
+              <button className="w-full p-2 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer">
                 Rotate 90° CW
-              </div>
-              <div className="p-2 border border-[#3a3d44] hover:text-[#e8e8e2] cursor-pointer">
+              </button>
+              <button className="w-full p-2 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer">
                 Flip Horizontal
-              </div>
-              <div className="p-2 border border-[#3a3d44] hover:text-[#e8e8e2] cursor-pointer">
+              </button>
+              <button className="w-full p-2 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer">
                 Flip Vertical
-              </div>
+              </button>
             </div>
+          </div>
+        );
+
+      case "filter":
+        return (
+          <div className="flex flex-col gap-3 font-mono text-xs">
+            <div className="text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
+              FILTER CONTROLS
+            </div>
+            <p className="text-[11px] text-[#9a9d9a]/70">
+              Select presets from the bottom strip or adjust filter intensity.
+            </p>
           </div>
         );
 
       case "layers":
       case "select":
-      case "move":
       case "text":
       default:
         return (
-          <div className="flex flex-col h-full text-xs font-mono">
-            <div className="flex items-center justify-between text-[11px] text-[#8f938f] uppercase tracking-wider font-semibold border-b border-[#3a3d44] pb-2 mb-3">
+          <div className="flex flex-col h-full font-mono text-xs">
+            <div className="flex items-center justify-between text-[11px] text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2 mb-3">
               <span>LAYERS ({layers.length})</span>
-              <button className="hover:text-[#e8e8e2] cursor-pointer text-sm">
+              <button className="hover:text-[#4b9fef] cursor-pointer text-sm">
                 +
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-1">
+            <div className="flex-1 overflow-y-auto space-y-1.5">
               {layers.length === 0 ? (
-                <div className="text-[11px] text-[#8f938f]/60 py-4 text-center border border-dashed border-[#3a3d44]">
+                <div className="text-[11px] text-[#9a9d9a]/50 py-4 text-center border border-dashed border-[#26272b] rounded">
                   NO LAYERS
                 </div>
               ) : (
@@ -124,17 +162,17 @@ export default function RightPanel({
                       key={layer.id}
                       onClick={() => onSelectLayer(layer.id)}
                       className={`
-                        flex items-center justify-between px-2 py-1.5 cursor-pointer text-[11px] transition-colors border
+                        flex items-center justify-between px-2.5 py-2 cursor-pointer text-[11px] transition-colors rounded border
                         ${
                           isSelected
-                            ? "bg-[#3a3d44]/50 text-[#e8e8e2] border-[#3a3d44]"
-                            : "text-[#8f938f] hover:text-[#e8e8e2] hover:bg-[#3a3d44]/20 border-transparent"
+                            ? "bg-[#4b9fef]/10 text-[#f0f0ec] border-[#4b9fef]/40"
+                            : "text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b]/30 border-transparent"
                         }
                       `}
                     >
                       <div className="flex items-center gap-2 truncate">
                         <svg
-                          className="w-3.5 h-3.5 shrink-0"
+                          className="w-3.5 h-3.5 shrink-0 text-[#4b9fef]"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="1.5"
@@ -158,7 +196,7 @@ export default function RightPanel({
                       >
                         {layer.visible ? (
                           <svg
-                            className="w-3.5 h-3.5"
+                            className="w-3.5 h-3.5 text-[#f0f0ec]"
                             fill="none"
                             stroke="currentColor"
                             strokeWidth="1.5"
@@ -177,7 +215,7 @@ export default function RightPanel({
                           </svg>
                         ) : (
                           <svg
-                            className="w-3.5 h-3.5 opacity-40"
+                            className="w-3.5 h-3.5 text-[#9a9d9a]/30"
                             fill="none"
                             stroke="currentColor"
                             strokeWidth="1.5"
@@ -202,7 +240,7 @@ export default function RightPanel({
   };
 
   return (
-    <aside className="w-52 border-l border-[#3a3d44] bg-[#141519] p-3 flex flex-col shrink-0 font-mono">
+    <aside className="w-[210px] border-l border-[#26272b] bg-[#131418] p-3.5 flex flex-col shrink-0 font-mono select-none">
       {renderContent()}
     </aside>
   );

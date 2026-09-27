@@ -1,21 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0e0f12;
-  --panel-bg: #141519;
-  --canvas-bg: #07080a;
-  --border-color: #3a3d44;
-  --text-primary: #e8e8e2;
-  --text-muted: #8f938f;
+  --bg-page: #0e0f12;
+  --bg-chrome: #131418;
+  --bg-well: #0a0a0c;
+  --border-hairline: #26272b;
+  --text-primary: #f0f0ec;
+  --text-muted: #9a9d9a;
+  --accent: #4b9fef;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-panel: var(--panel-bg);
-  --color-canvas: var(--canvas-bg);
-  --color-border: var(--border-color);
+  --color-background: var(--bg-page);
+  --color-chrome: var(--bg-chrome);
+  --color-well: var(--bg-well);
+  --color-border: var(--border-hairline);
   --color-foreground: var(--text-primary);
   --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
@@ -24,7 +26,7 @@
 }
 
 body {
-  background-color: var(--background);
+  background-color: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-mono);
   margin: 0;
@@ -34,14 +36,58 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom scrollbars flat & minimal */
+/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--background);
+  background: var(--bg-chrome);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
+  background: var(--border-hairline);
+  border-radius: 2px;
+}
+
+/* Accent range slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]:focus {
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #26272b;
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  background: #4b9fef;
+  margin-top: -4px;
+  border: 1px solid #131418;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #26272b;
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  background: #4b9fef;
+  border: 1px solid #131418;
 }

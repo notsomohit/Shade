@@ -9,7 +9,8 @@ interface LeftToolbarProps {
 
 interface ToolItem {
   id: ToolType;
-  label: string;
+  name: string;
+  shortcut: string;
   icon: React.ReactNode;
 }
 
@@ -20,10 +21,11 @@ export default function LeftToolbar({
   const tools: ToolItem[] = [
     {
       id: "select",
-      label: "Select",
+      name: "Select",
+      shortcut: "V",
       icon: (
         <svg
-          className="w-4 h-4"
+          className="w-4.5 h-4.5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -38,30 +40,12 @@ export default function LeftToolbar({
       ),
     },
     {
-      id: "move",
-      label: "Move",
-      icon: (
-        <svg
-          className="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75v4.5m0-4.5h-4.5m4.5 0L15 9m5.25 11.25v-4.5m0 4.5h-4.5m4.5 0L15 15"
-          />
-        </svg>
-      ),
-    },
-    {
       id: "crop",
-      label: "Crop",
+      name: "Crop",
+      shortcut: "C",
       icon: (
         <svg
-          className="w-4 h-4"
+          className="w-4.5 h-4.5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -77,10 +61,11 @@ export default function LeftToolbar({
     },
     {
       id: "adjust",
-      label: "Adjustments",
+      name: "Adjustments",
+      shortcut: "A",
       icon: (
         <svg
-          className="w-4 h-4"
+          className="w-4.5 h-4.5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -96,10 +81,11 @@ export default function LeftToolbar({
     },
     {
       id: "filter",
-      label: "Filters",
+      name: "Filters",
+      shortcut: "F",
       icon: (
         <svg
-          className="w-4 h-4"
+          className="w-4.5 h-4.5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -115,10 +101,11 @@ export default function LeftToolbar({
     },
     {
       id: "text",
-      label: "Text",
+      name: "Text",
+      shortcut: "T",
       icon: (
         <svg
-          className="w-4 h-4"
+          className="w-4.5 h-4.5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -134,10 +121,11 @@ export default function LeftToolbar({
     },
     {
       id: "layers",
-      label: "Layers",
+      name: "Layers",
+      shortcut: "L",
       icon: (
         <svg
-          className="w-4 h-4"
+          className="w-4.5 h-4.5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -154,26 +142,31 @@ export default function LeftToolbar({
   ];
 
   return (
-    <aside className="w-[52px] border-r border-[#3a3d44] bg-[#141519] flex flex-col items-center justify-between py-4 shrink-0 font-mono">
-      <div className="flex flex-col items-center gap-5 w-full">
+    <aside className="w-[52px] border-r border-[#26272b] bg-[#131418] flex flex-col items-center justify-between py-5 shrink-0 font-mono select-none">
+      <div className="flex flex-col items-center gap-6 w-full">
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
           return (
-            <button
-              key={tool.id}
-              onClick={() => onSelectTool(tool.id)}
-              title={tool.label}
-              className={`
-                w-9 h-9 flex items-center justify-center transition-colors duration-100 cursor-pointer
-                ${
-                  isActive
-                    ? "text-[#e8e8e2] bg-[#3a3d44]/40 border border-[#3a3d44]"
-                    : "text-[#8f938f] hover:text-[#e8e8e2] hover:bg-[#3a3d44]/20"
-                }
-              `}
-            >
-              {tool.icon}
-            </button>
+            <div key={tool.id} className="relative group">
+              <button
+                onClick={() => onSelectTool(tool.id)}
+                className={`
+                  w-9 h-9 rounded flex items-center justify-center transition-colors duration-150 cursor-pointer
+                  ${
+                    isActive
+                      ? "bg-[#4b9fef]/15 text-[#4b9fef]"
+                      : "text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b]/50"
+                  }
+                `}
+              >
+                {tool.icon}
+              </button>
+
+              {/* Tooltip */}
+              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 hidden group-hover:block pointer-events-none whitespace-nowrap px-2 py-1 bg-[#131418] text-[#f0f0ec] border border-[#26272b] text-[10px] rounded shadow-md">
+                {tool.name} <span className="text-[#4b9fef]">({tool.shortcut})</span>
+              </div>
+            </div>
           );
         })}
       </div>
