@@ -678,20 +678,49 @@ const CenterCanvas = memo(function CenterCanvas({
             aspectRatio: imageAspectRatio,
           }}
         >
-          {/* Bottom Layer: ORIGINAL (Before) Canvas (in-flow to give wrapper dimensions) */}
+          {/* Bottom Layer: ORIGINAL (Before) Canvas on Left */}
           <canvas
             ref={beforeCanvasRef}
             className="block w-full h-full object-contain pointer-events-none"
           />
 
-          {/* Top Layer: EDITED (After) Canvas (Positioned absolute & clipped to dividerPercent) */}
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+          {/* Top Layer: EDITED (After) Canvas & Layers on Right (Clipped from left by dividerPercent) */}
+          <div
+            className="absolute inset-0 pointer-events-none overflow-hidden"
             style={{
-              clipPath: `inset(0 ${100 - dividerPercent}% 0 0)`,
+              clipPath: `inset(0 0 0 ${dividerPercent}%)`,
             }}
-          />
+          >
+            {/* Edited Canvas */}
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+            />
+
+            {/* Text Overlays on the Edited (After) side */}
+            {layers
+              .filter((l) => l.type === "text" && l.textData && l.visible)
+              .map((layer) => {
+                const t = layer.textData!;
+                return (
+                  <div
+                    key={layer.id}
+                    style={{
+                      position: "absolute",
+                      left: `${t.x * 100}%`,
+                      top: `${t.y * 100}%`,
+                      fontFamily: t.fontFamily || "ui-monospace, monospace",
+                      fontSize: `${t.fontSize}px`,
+                      color: t.color,
+                      lineHeight: 1,
+                    }}
+                    className="p-1 font-bold whitespace-nowrap select-none pointer-events-none"
+                  >
+                    {t.text}
+                  </div>
+                );
+              })}
+          </div>
 
           {/* Draggable Divider Line & Handle */}
           <div
@@ -704,13 +733,13 @@ const CenterCanvas = memo(function CenterCanvas({
             </div>
           </div>
 
-          {/* Pinned Corner Badges */}
-          <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#4b9fef] border border-[#4b9fef]/40 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
-            AFTER (EDITED)
+          {/* Pinned Corner Badges: Left = Before (Original), Right = After (Edited) */}
+          <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#f0f0ec] border border-white/20 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
+            BEFORE (ORIGINAL)
           </div>
 
-          <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#f0f0ec] border border-white/20 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
-            BEFORE (ORIGINAL)
+          <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#4b9fef] border border-[#4b9fef]/40 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
+            AFTER (EDITED)
           </div>
         </div>
       )}
