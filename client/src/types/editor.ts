@@ -24,8 +24,8 @@ export interface TextOverlay {
   text: string;
   fontSize: number; // px
   color: string; // hex/rgb
-  x: number; // normalized 0 to 1
-  y: number; // normalized 0 to 1
+  x: number; // normalized 0 to 1 (percentage of canvas width)
+  y: number; // normalized 0 to 1 (percentage of canvas height)
   visible: boolean;
 }
 

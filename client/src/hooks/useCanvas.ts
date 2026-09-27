@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useEffect } from "react";
-import { Adjustments, TextOverlay } from "@/types/editor";
+import { Adjustments, LayerItem } from "@/types/editor";
 
 export interface TransformState {
   rotation: number; // 0, 90, 180, 270
@@ -29,10 +29,12 @@ export function useCanvas() {
     crop: null,
   });
 
-  const textOverlaysRef = useRef<TextOverlay[]>([]);
+  const layersRef = useRef<LayerItem[]>([]);
 
   /**
-   * Main non-destructive pixel processing & canvas render loop
+   * Main non-destructive pixel processing & canvas render loop.
+   * Renders layers in order of the layers array:
+   * Index 0 is TOP of stack, so we render from bottom (index layers.length-1) to top (0).
    */
   const renderPipeline = useCallback(() => {
     const canvas = canvasRef.current;
@@ -61,6 +63,9 @@ export function useCanvas() {
     canvas.width = cropW;
     canvas.height = cropH;
 
+    // Clear canvas
+    ctx.clearRect(0, 0, cropW, cropH);
+
     // Offscreen canvas for initial transform draw
     const offscreen = document.createElement("canvas");
     offscreen.width = baseW;
@@ -78,28 +83,35 @@ export function useCanvas() {
     offCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     offCtx.restore();
 
-    // Draw unadjusted cropped region onto main canvas
-    ctx.drawImage(offscreen, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-    // Draw to Before canvas if present for Compare mode (UNADJUSTED BEFORE LAYER)
+    // Render unadjusted version to Before Canvas for Compare mode
     if (beforeCanvasRef.current) {
       const bCanvas = beforeCanvasRef.current;
       bCanvas.width = cropW;
       bCanvas.height = cropH;
       const bCtx = bCanvas.getContext("2d");
       if (bCtx) {
+        bCtx.clearRect(0, 0, cropW, cropH);
         bCtx.drawImage(offscreen, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
       }
     }
 
-    // 2. Pixel Adjustments (Brightness, Contrast, Saturation, Exposure)
+    // Prepare offscreen canvas for adjusted image
+    const adjCanvas = document.createElement("canvas");
+    adjCanvas.width = cropW;
+    adjCanvas.height = cropH;
+    const adjCtx = adjCanvas.getContext("2d", { willReadFrequently: true });
+    if (!adjCtx) return;
+
+    adjCtx.drawImage(offscreen, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+    // Apply pixel adjustments
     if (
       adj.brightness !== 0 ||
       adj.contrast !== 0 ||
       adj.saturation !== 0 ||
       adj.exposure !== 0
     ) {
-      const imageData = ctx.getImageData(0, 0, cropW, cropH);
+      const imageData = adjCtx.getImageData(0, 0, cropW, cropH);
       const data = imageData.data;
 
       const brightnessOffset = Math.round((adj.brightness / 100) * 255);
@@ -143,21 +155,35 @@ export function useCanvas() {
         data[i + 2] = Math.min(255, Math.max(0, b));
       }
 
-      ctx.putImageData(imageData, 0, 0);
+      adjCtx.putImageData(imageData, 0, 0);
     }
 
-    // 3. Render Text Overlays
-    textOverlaysRef.current.forEach((t) => {
-      if (!t.visible) return;
-      ctx.save();
-      ctx.font = `bold ${t.fontSize}px ui-monospace, monospace`;
-      ctx.fillStyle = t.color;
-      ctx.textBaseline = "top";
-      const posX = t.x * cropW;
-      const posY = t.y * cropH;
-      ctx.fillText(t.text, posX, posY);
-      ctx.restore();
-    });
+    // Render layers in stacking order from bottom (layers.length - 1) to top (0)
+    const currentLayers = layersRef.current;
+    if (currentLayers.length === 0) {
+      // Fallback: draw image layer directly if no layers specified
+      ctx.drawImage(adjCanvas, 0, 0);
+    } else {
+      for (let i = currentLayers.length - 1; i >= 0; i--) {
+        const layer = currentLayers[i];
+        if (!layer.visible) continue;
+
+        if (layer.type === "image") {
+          ctx.drawImage(adjCanvas, 0, 0);
+        } else if (layer.type === "text" && layer.textData) {
+          const t = layer.textData;
+          if (!t.visible) continue;
+          ctx.save();
+          ctx.font = `bold ${t.fontSize}px ui-monospace, monospace`;
+          ctx.fillStyle = t.color;
+          ctx.textBaseline = "top";
+          const posX = t.x * cropW;
+          const posY = t.y * cropH;
+          ctx.fillText(t.text, posX, posY);
+          ctx.restore();
+        }
+      }
+    }
   }, []);
 
   const loadImage = useCallback(
@@ -180,7 +206,6 @@ export function useCanvas() {
             saturation: 0,
             exposure: 0,
           };
-          textOverlaysRef.current = [];
           requestAnimationFrame(() => {
             renderPipeline();
           });
@@ -214,9 +239,9 @@ export function useCanvas() {
     [renderPipeline]
   );
 
-  const updateTextOverlays = useCallback(
-    (overlays: TextOverlay[]) => {
-      textOverlaysRef.current = overlays;
+  const updateLayers = useCallback(
+    (newLayers: LayerItem[]) => {
+      layersRef.current = newLayers;
       renderPipeline();
     },
     [renderPipeline]
@@ -235,7 +260,7 @@ export function useCanvas() {
     loadImage,
     updateAdjustments,
     updateTransform,
-    updateTextOverlays,
+    updateLayers,
     transformState: transformRef.current,
     renderPipeline,
   };

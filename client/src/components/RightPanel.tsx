@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ToolType, Adjustments, LayerItem, TextOverlay } from "@/types/editor";
+import { ToolType, Adjustments, LayerItem } from "@/types/editor";
 import { TransformState } from "@/hooks/useCanvas";
 
 interface RightPanelProps {
@@ -12,8 +12,9 @@ interface RightPanelProps {
   onUpdateTransform: (transform: Partial<TransformState>) => void;
   layers: LayerItem[];
   selectedLayerId: string | null;
-  onSelectLayer: (id: string) => void;
+  onSelectLayer: (id: string | null) => void;
   onToggleLayerVisibility: (id: string) => void;
+  onReorderLayers: (newLayers: LayerItem[]) => void;
   onAddTextLayer: (text: string, fontSize: number, color: string) => void;
 }
 
@@ -27,12 +28,17 @@ export default function RightPanel({
   selectedLayerId,
   onSelectLayer,
   onToggleLayerVisibility,
+  onReorderLayers,
   onAddTextLayer,
 }: RightPanelProps) {
   // Text tool local inputs
   const [textInput, setTextInput] = useState("StudioNorth");
   const [fontSizeInput, setFontSizeInput] = useState(48);
   const [textColorInput, setTextColorInput] = useState("#4b9fef");
+
+  // Drag reorder state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const handleRotateCW = () => {
     const nextRot = (transformState.rotation + 90) % 360;
@@ -61,6 +67,41 @@ export default function RightPanel({
     onAddTextLayer(textInput, fontSizeInput, textColorInput);
   };
 
+  // Reorder helper: Move Up / Down
+  const handleMoveLayer = (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= layers.length) return;
+
+    const nextLayers = [...layers];
+    const [movedItem] = nextLayers.splice(index, 1);
+    nextLayers.splice(targetIndex, 0, movedItem);
+    onReorderLayers(nextLayers);
+  };
+
+  // Drag & Drop reorder handlers
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDrop = (index: number) => {
+    if (draggedIndex === null || draggedIndex === index) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const nextLayers = [...layers];
+    const [movedItem] = nextLayers.splice(draggedIndex, 1);
+    nextLayers.splice(index, 0, movedItem);
+    onReorderLayers(nextLayers);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
   const colorPresets = [
     { name: "Blue", hex: "#4b9fef" },
     { name: "White", hex: "#ffffff" },
@@ -78,7 +119,6 @@ export default function RightPanel({
               TEXT TOOL
             </div>
 
-            {/* Text Input */}
             <div className="space-y-1.5">
               <label className="text-xs text-[#9a9d9a]">TEXT CONTENT</label>
               <input
@@ -90,7 +130,6 @@ export default function RightPanel({
               />
             </div>
 
-            {/* Font Size Slider */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-[#9a9d9a]">FONT SIZE</span>
@@ -106,7 +145,6 @@ export default function RightPanel({
               />
             </div>
 
-            {/* Text Color Picker / Presets */}
             <div className="space-y-1.5">
               <label className="text-xs text-[#9a9d9a]">TEXT COLOR</label>
               <div className="flex items-center gap-2">
@@ -126,7 +164,6 @@ export default function RightPanel({
               </div>
             </div>
 
-            {/* Add Text Layer Button */}
             <button
               onClick={handleAddText}
               className="w-full py-2 bg-[#4b9fef] text-[#0e0f12] font-bold text-xs rounded hover:bg-[#3b8fd9] transition-colors cursor-pointer mt-2"
@@ -286,37 +323,61 @@ export default function RightPanel({
       default:
         return (
           <div className="flex flex-col h-full font-mono text-xs">
-            <div className="flex items-center justify-between text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2 mb-3">
-              <span>LAYERS ({layers.length})</span>
+            <div className="flex items-center justify-between text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2 mb-2">
+              <span>LAYERS STACK ({layers.length})</span>
             </div>
+            <p className="text-[10px] text-[#9a9d9a]/60 mb-3">
+              Top of list renders ABOVE bottom items. Drag to reorder.
+            </p>
 
-            <div className="flex-1 overflow-y-auto space-y-2">
+            <div className="flex-1 overflow-y-auto space-y-1.5">
               {layers.length === 0 ? (
                 <div className="text-xs text-[#9a9d9a]/50 py-4 text-center border border-dashed border-[#26272b] rounded">
                   NO LAYERS
                 </div>
               ) : (
-                layers.map((layer) => {
+                layers.map((layer, index) => {
                   const isSelected = selectedLayerId === layer.id;
+                  const isDragOver = dragOverIndex === index;
                   return (
                     <div
                       key={layer.id}
+                      draggable
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={() => handleDrop(index)}
                       onClick={() => onSelectLayer(layer.id)}
                       className={`
-                        flex items-center justify-between px-3 py-2.5 cursor-pointer text-xs transition-colors rounded border
+                        flex items-center justify-between px-2.5 py-2 cursor-grab active:cursor-grabbing text-xs transition-all rounded border relative select-none
                         ${
                           isSelected
-                            ? "bg-[#4b9fef]/10 text-[#f0f0ec] border-[#4b9fef]/40"
-                            : "text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b]/30 border-transparent"
+                            ? "bg-[#4b9fef]/15 text-[#f0f0ec] border-[#4b9fef]"
+                            : "bg-[#0e0f12]/50 text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b]/40 border-[#26272b]"
                         }
+                        ${isDragOver ? "border-t-2 border-t-white" : ""}
                       `}
                     >
-                      <div className="flex items-center gap-2 truncate">
+                      <div className="flex items-center gap-2 truncate min-w-0">
+                        {/* Drag Handle Gripper Icon */}
+                        <svg
+                          className="w-3.5 h-3.5 shrink-0 text-[#9a9d9a]/40"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M3.75 9h16.5m-16.5 6h16.5"
+                          />
+                        </svg>
+
                         {layer.type === "text" ? (
-                          <span className="font-bold text-[#4b9fef] text-sm shrink-0">T</span>
+                          <span className="font-bold text-[#4b9fef] text-xs shrink-0">T</span>
                         ) : (
                           <svg
-                            className="w-4 h-4 shrink-0 text-[#4b9fef]"
+                            className="w-3.5 h-3.5 shrink-0 text-[#4b9fef]"
                             fill="none"
                             stroke="currentColor"
                             strokeWidth="1.5"
@@ -329,51 +390,78 @@ export default function RightPanel({
                             />
                           </svg>
                         )}
-                        <span className="truncate font-medium">{layer.name}</span>
+                        <span className="truncate font-medium text-[11px]">{layer.name}</span>
                       </div>
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleLayerVisibility(layer.id);
-                        }}
-                        className="hover:text-white shrink-0 p-0.5"
-                      >
-                        {layer.visible ? (
-                          <svg
-                            className="w-4 h-4 text-[#f0f0ec]"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-                            />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                            />
-                          </svg>
-                        ) : (
-                          <svg
-                            className="w-4 h-4 text-[#9a9d9a]/30"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
-                            />
-                          </svg>
-                        )}
-                      </button>
+                      {/* Controls: Reorder Up/Down + Visibility Toggle */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveLayer(index, "up");
+                          }}
+                          disabled={index === 0}
+                          title="Move Layer Up (Render Above)"
+                          className="hover:text-white disabled:opacity-20 p-0.5 text-[10px]"
+                        >
+                          ▲
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveLayer(index, "down");
+                          }}
+                          disabled={index === layers.length - 1}
+                          title="Move Layer Down (Render Below)"
+                          className="hover:text-white disabled:opacity-20 p-0.5 text-[10px]"
+                        >
+                          ▼
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleLayerVisibility(layer.id);
+                          }}
+                          className="hover:text-white shrink-0 p-0.5 ml-1"
+                        >
+                          {layer.visible ? (
+                            <svg
+                              className="w-3.5 h-3.5 text-[#f0f0ec]"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                              />
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                              />
+                            </svg>
+                          ) : (
+                            <svg
+                              className="w-3.5 h-3.5 text-[#9a9d9a]/30"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                              />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   );
                 })

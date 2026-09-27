@@ -24,7 +24,7 @@ export default function Home() {
     loadImage,
     updateAdjustments,
     updateTransform,
-    updateTextOverlays,
+    updateLayers,
     transformState,
     renderPipeline,
   } = useCanvas();
@@ -36,7 +36,6 @@ export default function Home() {
   const [imageData, setImageData] = useState<ImageMetaData | null>(null);
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
-  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
 
   // Adjustments & History Stack
   const [adjustments, setAdjustments] = useState<Adjustments>(INITIAL_ADJUSTMENTS);
@@ -84,6 +83,16 @@ export default function Home() {
     updateTransform({ crop });
   };
 
+  // Layer Reordering (Top of list = Rendered on top)
+  const handleReorderLayers = useCallback(
+    (newLayers: LayerItem[]) => {
+      setLayers(newLayers);
+      updateLayers(newLayers);
+    },
+    [updateLayers]
+  );
+
+  // Add text layer directly to TOP of stack (Index 0)
   const handleAddTextLayer = (text: string, fontSize: number, color: string) => {
     const id = `text-${Date.now()}`;
     const newOverlay: TextOverlay = {
@@ -91,15 +100,11 @@ export default function Home() {
       text,
       fontSize,
       color,
-      x: 0.1, // top-left offset inside canvas
-      y: 0.15 + textOverlays.length * 0.1,
+      x: 0.1, // 10% from left
+      y: 0.15 + layers.length * 0.08, // vertical stagger
       visible: true,
     };
-    const updatedOverlays = [...textOverlays, newOverlay];
-    setTextOverlays(updatedOverlays);
-    updateTextOverlays(updatedOverlays);
 
-    // Add to Layers list
     const newLayerItem: LayerItem = {
       id,
       name: `Text: ${text}`,
@@ -107,9 +112,33 @@ export default function Home() {
       type: "text",
       textData: newOverlay,
     };
-    setLayers((prev) => [newLayerItem, ...prev]);
+
+    // Insert at TOP of stack (index 0)
+    const nextLayers = [newLayerItem, ...layers];
+    setLayers(nextLayers);
+    updateLayers(nextLayers);
     setSelectedLayerId(id);
   };
+
+  // Update text position on drag
+  const handleUpdateTextPosition = useCallback(
+    (id: string, x: number, y: number) => {
+      setLayers((prev) => {
+        const nextLayers = prev.map((layer) => {
+          if (layer.id === id && layer.textData) {
+            return {
+              ...layer,
+              textData: { ...layer.textData, x, y },
+            };
+          }
+          return layer;
+        });
+        updateLayers(nextLayers);
+        return nextLayers;
+      });
+    },
+    [updateLayers]
+  );
 
   // Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Tool Hotkeys)
   useEffect(() => {
@@ -168,9 +197,8 @@ export default function Home() {
         setAdjustments(INITIAL_ADJUSTMENTS);
         setHistory([INITIAL_ADJUSTMENTS]);
         setHistoryIndex(0);
-        setTextOverlays([]);
 
-        // Set base layer
+        // Base background image layer
         const baseLayer: LayerItem = {
           id: "layer-0",
           name: file.name,
@@ -178,12 +206,13 @@ export default function Home() {
           type: "image",
         };
         setLayers([baseLayer]);
+        updateLayers([baseLayer]);
         setSelectedLayerId("layer-0");
       } catch (err) {
         console.error("Failed to load image:", err);
       }
     },
-    [loadImage]
+    [loadImage, updateLayers]
   );
 
   const handleZoomIn = () => setZoom((z) => Math.min(400, z + 25));
@@ -193,11 +222,7 @@ export default function Home() {
   const handleToggleLayerVisibility = (id: string) => {
     setLayers((prev) => {
       const nextLayers = prev.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l));
-      const nextTextOverlays = textOverlays.map((t) =>
-        t.id === id ? { ...t, visible: !t.visible } : t
-      );
-      setTextOverlays(nextTextOverlays);
-      updateTextOverlays(nextTextOverlays);
+      updateLayers(nextLayers);
       return nextLayers;
     });
   };
@@ -237,14 +262,19 @@ export default function Home() {
 
         {/* Center Workspace (Canvas + Filter Presets Strip) */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-          {/* 3. Center Canvas Well */}
+          {/* 3. Center Canvas Well with Dynamic Ratio & Draggable Text */}
           <CenterCanvas
             canvasRef={canvasRef}
             beforeCanvasRef={beforeCanvasRef}
             hasImage={!!imageData}
+            imageData={imageData}
             activeTool={activeTool}
             zoom={zoom}
             compareMode={compareMode}
+            layers={layers}
+            selectedLayerId={selectedLayerId}
+            onSelectLayer={setSelectedLayerId}
+            onUpdateTextPosition={handleUpdateTextPosition}
             onToggleCompare={() => setCompareMode(!compareMode)}
             onImageSelect={handleImageSelect}
             onApplyCrop={handleApplyCrop}
@@ -258,7 +288,7 @@ export default function Home() {
           />
         </div>
 
-        {/* 5. Contextual Right Panel */}
+        {/* 5. Contextual Right Panel with Layer Reordering */}
         <RightPanel
           activeTool={activeTool}
           adjustments={adjustments}
@@ -269,6 +299,7 @@ export default function Home() {
           selectedLayerId={selectedLayerId}
           onSelectLayer={setSelectedLayerId}
           onToggleLayerVisibility={handleToggleLayerVisibility}
+          onReorderLayers={handleReorderLayers}
           onAddTextLayer={handleAddTextLayer}
         />
       </div>
