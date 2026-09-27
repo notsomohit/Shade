@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useEffect } from "react";
-import { Adjustments, LayerItem } from "@/types/editor";
+import { Adjustments, LayerItem, GridMode, FilterSettings } from "@/types/editor";
 
 export interface TransformState {
   rotation: number; // 0, 90, 180, 270
@@ -22,6 +22,12 @@ export function useCanvas() {
     exposure: 0,
   });
 
+  const filterRef = useRef<FilterSettings>({
+    id: "original",
+    name: "Original",
+    intensity: 100,
+  });
+
   const transformRef = useRef<TransformState>({
     rotation: 0,
     flipH: false,
@@ -29,12 +35,72 @@ export function useCanvas() {
     crop: null,
   });
 
+  const gridModeRef = useRef<GridMode>("none");
   const layersRef = useRef<LayerItem[]>([]);
 
   /**
-   * Main non-destructive pixel processing & canvas render loop.
-   * Renders layers in order of the layers array:
-   * Index 0 is TOP of stack, so we render from bottom (index layers.length-1) to top (0).
+   * Applies preset LUT filter transformations to pixel buffer
+   */
+  const applyFilterLUT = (data: Uint8ClampedArray, filter: FilterSettings) => {
+    if (filter.id === "original" || filter.intensity <= 0) return;
+    const factor = filter.intensity / 100;
+
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+
+      let nr = r;
+      let ng = g;
+      let nb = b;
+
+      switch (filter.id) {
+        case "vintage":
+          nr = r * 0.9 + g * 0.1;
+          ng = g * 0.7 + b * 0.1;
+          nb = b * 0.4 + 20;
+          break;
+
+        case "cool":
+          nr = r * 0.7;
+          ng = g * 0.9 + 15;
+          nb = b * 1.2 + 30;
+          break;
+
+        case "mono":
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          nr = gray;
+          ng = gray;
+          nb = gray;
+          break;
+
+        case "warm":
+          nr = r * 1.15 + 15;
+          ng = g * 0.95 + 5;
+          nb = b * 0.8;
+          break;
+
+        case "dramatic":
+          nr = r > 128 ? Math.min(255, r * 1.2) : r * 0.8;
+          ng = g > 128 ? Math.min(255, g * 1.2) : g * 0.8;
+          nb = b > 128 ? Math.min(255, b * 1.2) : b * 0.8;
+          break;
+
+        case "cyber":
+          nr = r * 1.2 + 20;
+          ng = g * 0.6;
+          nb = b * 1.3 + 30;
+          break;
+      }
+
+      data[i] = Math.min(255, Math.max(0, r + (nr - r) * factor));
+      data[i + 1] = Math.min(255, Math.max(0, g + (ng - g) * factor));
+      data[i + 2] = Math.min(255, Math.max(0, b + (nb - b) * factor));
+    }
+  };
+
+  /**
+   * Main non-destructive pixel processing & canvas render loop
    */
   const renderPipeline = useCallback(() => {
     const canvas = canvasRef.current;
@@ -46,15 +112,15 @@ export function useCanvas() {
 
     const transform = transformRef.current;
     const adj = adjustmentsRef.current;
+    const filter = filterRef.current;
+    const gridMode = gridModeRef.current;
 
-    // 1. Calculate transformed dimensions
     const isRotated90 = transform.rotation === 90 || transform.rotation === 270;
     const baseW = isRotated90 ? img.naturalHeight : img.naturalWidth;
     const baseH = isRotated90 ? img.naturalWidth : img.naturalHeight;
 
     if (baseW === 0 || baseH === 0) return;
 
-    // Crop bounds
     const cropX = transform.crop ? Math.round(transform.crop.x * baseW) : 0;
     const cropY = transform.crop ? Math.round(transform.crop.y * baseH) : 0;
     const cropW = transform.crop ? Math.round(transform.crop.width * baseW) : baseW;
@@ -63,10 +129,8 @@ export function useCanvas() {
     canvas.width = cropW;
     canvas.height = cropH;
 
-    // Clear canvas
     ctx.clearRect(0, 0, cropW, cropH);
 
-    // Offscreen canvas for initial transform draw
     const offscreen = document.createElement("canvas");
     offscreen.width = baseW;
     offscreen.height = baseH;
@@ -83,7 +147,6 @@ export function useCanvas() {
     offCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     offCtx.restore();
 
-    // Render unadjusted version to Before Canvas for Compare mode
     if (beforeCanvasRef.current) {
       const bCanvas = beforeCanvasRef.current;
       bCanvas.width = cropW;
@@ -95,7 +158,6 @@ export function useCanvas() {
       }
     }
 
-    // Prepare offscreen canvas for adjusted image
     const adjCanvas = document.createElement("canvas");
     adjCanvas.width = cropW;
     adjCanvas.height = cropH;
@@ -104,12 +166,12 @@ export function useCanvas() {
 
     adjCtx.drawImage(offscreen, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-    // Apply pixel adjustments
     if (
       adj.brightness !== 0 ||
       adj.contrast !== 0 ||
       adj.saturation !== 0 ||
-      adj.exposure !== 0
+      adj.exposure !== 0 ||
+      filter.id !== "original"
     ) {
       const imageData = adjCtx.getImageData(0, 0, cropW, cropH);
       const data = imageData.data;
@@ -155,13 +217,12 @@ export function useCanvas() {
         data[i + 2] = Math.min(255, Math.max(0, b));
       }
 
+      applyFilterLUT(data, filter);
       adjCtx.putImageData(imageData, 0, 0);
     }
 
-    // Render layers in stacking order from bottom (layers.length - 1) to top (0)
     const currentLayers = layersRef.current;
     if (currentLayers.length === 0) {
-      // Fallback: draw image layer directly if no layers specified
       ctx.drawImage(adjCanvas, 0, 0);
     } else {
       for (let i = currentLayers.length - 1; i >= 0; i--) {
@@ -174,7 +235,8 @@ export function useCanvas() {
           const t = layer.textData;
           if (!t.visible) continue;
           ctx.save();
-          ctx.font = `bold ${t.fontSize}px ui-monospace, monospace`;
+          const family = t.fontFamily || "ui-monospace, monospace";
+          ctx.font = `bold ${t.fontSize}px ${family}`;
           ctx.fillStyle = t.color;
           ctx.textBaseline = "top";
           const posX = t.x * cropW;
@@ -183,6 +245,52 @@ export function useCanvas() {
           ctx.restore();
         }
       }
+    }
+
+    // High Visibility Grid / Rule of Thirds Guides
+    if (gridMode !== "none") {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+      ctx.shadowBlur = 3;
+
+      if (gridMode === "thirds") {
+        const stepX = cropW / 3;
+        const stepY = cropH / 3;
+
+        for (let i = 1; i < 3; i++) {
+          ctx.beginPath();
+          ctx.moveTo(i * stepX, 0);
+          ctx.lineTo(i * stepX, cropH);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(0, i * stepY);
+          ctx.lineTo(cropW, i * stepY);
+          ctx.stroke();
+        }
+      } else if (gridMode === "grid") {
+        const cols = 8;
+        const rows = 8;
+        const stepX = cropW / cols;
+        const stepY = cropH / rows;
+
+        for (let i = 1; i < cols; i++) {
+          ctx.beginPath();
+          ctx.moveTo(i * stepX, 0);
+          ctx.lineTo(i * stepX, cropH);
+          ctx.stroke();
+        }
+        for (let j = 1; j < rows; j++) {
+          ctx.beginPath();
+          ctx.moveTo(0, j * stepY);
+          ctx.lineTo(cropW, j * stepY);
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
     }
   }, []);
 
@@ -205,6 +313,11 @@ export function useCanvas() {
             contrast: 0,
             saturation: 0,
             exposure: 0,
+          };
+          filterRef.current = {
+            id: "original",
+            name: "Original",
+            intensity: 100,
           };
           requestAnimationFrame(() => {
             renderPipeline();
@@ -231,9 +344,25 @@ export function useCanvas() {
     [renderPipeline]
   );
 
+  const updateFilter = useCallback(
+    (newFilter: FilterSettings) => {
+      filterRef.current = newFilter;
+      renderPipeline();
+    },
+    [renderPipeline]
+  );
+
   const updateTransform = useCallback(
     (newTransform: Partial<TransformState>) => {
       transformRef.current = { ...transformRef.current, ...newTransform };
+      renderPipeline();
+    },
+    [renderPipeline]
+  );
+
+  const updateGridMode = useCallback(
+    (mode: GridMode) => {
+      gridModeRef.current = mode;
       renderPipeline();
     },
     [renderPipeline]
@@ -243,6 +372,25 @@ export function useCanvas() {
     (newLayers: LayerItem[]) => {
       layersRef.current = newLayers;
       renderPipeline();
+    },
+    [renderPipeline]
+  );
+
+  const exportImage = useCallback(
+    (format: "image/png" | "image/jpeg" | "image/webp", quality: number) => {
+      const currentGrid = gridModeRef.current;
+      gridModeRef.current = "none";
+      renderPipeline();
+
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+
+      const dataUrl = canvas.toDataURL(format, quality);
+
+      gridModeRef.current = currentGrid;
+      renderPipeline();
+
+      return dataUrl;
     },
     [renderPipeline]
   );
@@ -259,9 +407,14 @@ export function useCanvas() {
     originalImageRef,
     loadImage,
     updateAdjustments,
+    updateFilter,
     updateTransform,
+    updateGridMode,
     updateLayers,
+    exportImage,
     transformState: transformRef.current,
+    filterSettings: filterRef.current,
+    gridMode: gridModeRef.current,
     renderPipeline,
   };
 }

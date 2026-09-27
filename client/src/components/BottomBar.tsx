@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { ImageMetaData } from "@/types/editor";
 
 interface BottomBarProps {
@@ -10,7 +11,7 @@ interface BottomBarProps {
   imageData: ImageMetaData | null;
 }
 
-export default function BottomBar({
+const BottomBar = memo(function BottomBar({
   zoom,
   onZoomIn,
   onZoomOut,
@@ -69,4 +70,6 @@ export default function BottomBar({
       </div>
     </footer>
   );
-}
+});
+
+export default BottomBar;

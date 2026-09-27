@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { ToolType } from "@/types/editor";
 
 interface LeftToolbarProps {
@@ -14,7 +15,7 @@ interface ToolItem {
   icon: React.ReactNode;
 }
 
-export default function LeftToolbar({
+const LeftToolbar = memo(function LeftToolbar({
   activeTool,
   onSelectTool,
 }: LeftToolbarProps) {
@@ -139,11 +140,31 @@ export default function LeftToolbar({
         </svg>
       ),
     },
+    {
+      id: "export",
+      name: "Export Settings",
+      shortcut: "E",
+      icon: (
+        <svg
+          className="w-4.5 h-4.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+          />
+        </svg>
+      ),
+    },
   ];
 
   return (
     <aside className="w-[52px] border-r border-[#26272b] bg-[#131418] flex flex-col items-center justify-between py-5 shrink-0 font-mono select-none">
-      <div className="flex flex-col items-center gap-6 w-full">
+      <div className="flex flex-col items-center gap-5 w-full">
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
           return (
@@ -162,7 +183,6 @@ export default function LeftToolbar({
                 {tool.icon}
               </button>
 
-              {/* Tooltip */}
               <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 hidden group-hover:block pointer-events-none whitespace-nowrap px-2 py-1 bg-[#131418] text-[#f0f0ec] border border-[#26272b] text-[10px] rounded shadow-md">
                 {tool.name} <span className="text-[#4b9fef]">({tool.shortcut})</span>
               </div>
@@ -172,4 +192,6 @@ export default function LeftToolbar({
       </div>
     </aside>
   );
-}
+});
+
+export default LeftToolbar;

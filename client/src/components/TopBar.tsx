@@ -1,19 +1,26 @@
 "use client";
 
+import { memo } from "react";
+import { GridMode } from "@/types/editor";
+
 interface TopBarProps {
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  gridMode: GridMode;
+  onToggleGrid: () => void;
   onExport: () => void;
   onFileSelect: (file: File) => void;
 }
 
-export default function TopBar({
+const TopBar = memo(function TopBar({
   canUndo,
   canRedo,
   onUndo,
   onRedo,
+  gridMode,
+  onToggleGrid,
   onExport,
   onFileSelect,
 }: TopBarProps) {
@@ -26,11 +33,22 @@ export default function TopBar({
     }
   };
 
+  const getGridLabel = () => {
+    switch (gridMode) {
+      case "grid":
+        return "GRID: 8×8";
+      case "thirds":
+        return "GRID: THIRDS";
+      case "none":
+      default:
+        return "GRID: OFF";
+    }
+  };
+
   return (
     <header className="h-10 px-3 flex items-center justify-between border-b border-[#26272b] bg-[#131418] text-xs font-mono text-[#f0f0ec] shrink-0 select-none">
       {/* Left: Branding & Menu Row */}
       <div className="flex items-center gap-6">
-        {/* Geometric Compass/Arrow Logo */}
         <div className="flex items-center gap-2">
           <div className="w-5 h-5 flex items-center justify-center bg-[#4b9fef]/10 border border-[#4b9fef]/40 rounded-sm">
             <svg
@@ -52,7 +70,6 @@ export default function TopBar({
           </span>
         </div>
 
-        {/* Menu Row */}
         <nav className="flex items-center gap-4 text-[#9a9d9a] text-[11px]">
           {menus.map((menu) => (
             <div key={menu} className="relative">
@@ -76,8 +93,24 @@ export default function TopBar({
         </nav>
       </div>
 
-      {/* Right: History controls & Primary Export button */}
+      {/* Right: Grid toggle, History controls & Primary Export button */}
       <div className="flex items-center gap-4">
+        {/* Grid Mode Guide Overlay Toggle */}
+        <button
+          onClick={onToggleGrid}
+          title="Toggle Grid Guide Overlays"
+          className={`
+            px-2.5 py-1 rounded border text-[11px] font-mono transition-colors cursor-pointer font-semibold
+            ${
+              gridMode !== "none"
+                ? "bg-[#4b9fef]/15 text-[#4b9fef] border-[#4b9fef]/40"
+                : "bg-[#0e0f12] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+            }
+          `}
+        >
+          {getGridLabel()}
+        </button>
+
         {/* Undo / Redo buttons */}
         <div className="flex items-center gap-1">
           <button
@@ -164,4 +197,6 @@ export default function TopBar({
       </div>
     </header>
   );
-}
+});
+
+export default TopBar;
