@@ -1,0 +1,493 @@
+"use client";
+
+import { RefObject, useState, useCallback, useRef, useEffect } from "react";
+import { ToolType, LayerItem, TextOverlay, ImageMetaData } from "@/types/editor";
+
+interface CenterCanvasProps {
+  canvasRef: RefObject<HTMLCanvasElement | null>;
+  beforeCanvasRef: RefObject<HTMLCanvasElement | null>;
+  hasImage: boolean;
+  imageData: ImageMetaData | null;
+  activeTool: ToolType;
+  zoom: number;
+  compareMode: boolean;
+  layers: LayerItem[];
+  selectedLayerId: string | null;
+  onSelectLayer: (id: string | null) => void;
+  onUpdateTextPosition: (id: string, x: number, y: number) => void;
+  onToggleCompare: () => void;
+  onImageSelect: (file: File) => void;
+  onApplyCrop?: (crop: { x: number; y: number; width: number; height: number }) => void;
+  renderPipeline: () => void;
+}
+
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+
+export default function CenterCanvas({
+  canvasRef,
+  beforeCanvasRef,
+  hasImage,
+  imageData,
+  activeTool,
+  zoom,
+  compareMode,
+  layers,
+  selectedLayerId,
+  onSelectLayer,
+  onUpdateTextPosition,
+  onToggleCompare,
+  onImageSelect,
+  onApplyCrop,
+  renderPipeline,
+}: CenterCanvasProps) {
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [dividerPercent, setDividerPercent] = useState<number>(50);
+  const [isDraggingDivider, setIsDraggingDivider] = useState(false);
+
+  // Active dragging state for text layers
+  const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
+  const textDragStartRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  const [cropBox] = useState({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
+  const compareContainerRef = useRef<HTMLDivElement>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounter = useRef(0);
+
+  // Dynamic Aspect Ratio calculation (e.g. 1920 / 1080)
+  const imageAspectRatio = imageData ? `${imageData.width} / ${imageData.height}` : "16 / 10";
+
+  // Trigger render whenever canvas is mounted or hasImage becomes true
+  useEffect(() => {
+    if (hasImage) {
+      const timer = setTimeout(() => {
+        renderPipeline();
+      }, 20);
+      return () => clearTimeout(timer);
+    }
+  }, [hasImage, compareMode, renderPipeline]);
+
+  // Pointer position calculation helper for Compare slider
+  const updateDividerPos = useCallback((clientX: number) => {
+    if (!compareContainerRef.current) return;
+    const rect = compareContainerRef.current.getBoundingClientRect();
+    const offsetX = clientX - rect.left;
+    const pct = (offsetX / rect.width) * 100;
+    const clampedPct = Math.min(98, Math.max(2, pct));
+    setDividerPercent(clampedPct);
+  }, []);
+
+  // Compare Slider Drag Handlers
+  const handleCompareMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingDivider(true);
+    updateDividerPos(e.clientX);
+  };
+
+  const handleCompareTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length > 0) {
+      setIsDraggingDivider(true);
+      updateDividerPos(e.touches[0].clientX);
+    }
+  };
+
+  const handleCompareTouchMove = (e: React.TouchEvent) => {
+    if (isDraggingDivider && e.touches.length > 0) {
+      e.preventDefault();
+      updateDividerPos(e.touches[0].clientX);
+    }
+  };
+
+  const handleCompareTouchEnd = () => {
+    setIsDraggingDivider(false);
+  };
+
+  // Text Layer Dragging Logic
+  const handleTextMouseDown = (e: React.MouseEvent, textItem: TextOverlay) => {
+    e.stopPropagation();
+    onSelectLayer(textItem.id);
+    setDraggingTextId(textItem.id);
+    textDragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: textItem.x,
+      origY: textItem.y,
+    };
+  };
+
+  const handleTextTouchStart = (e: React.TouchEvent, textItem: TextOverlay) => {
+    if (e.touches.length > 0) {
+      e.stopPropagation();
+      onSelectLayer(textItem.id);
+      setDraggingTextId(textItem.id);
+      textDragStartRef.current = {
+        startX: e.touches[0].clientX,
+        startY: e.touches[0].clientY,
+        origX: textItem.x,
+        origY: textItem.y,
+      };
+    }
+  };
+
+  // Global window listeners for Compare slider & Text drag
+  useEffect(() => {
+    const handleGlobalPointerMove = (e: MouseEvent) => {
+      // Compare Slider drag
+      if (isDraggingDivider) {
+        updateDividerPos(e.clientX);
+      }
+
+      // Text Layer drag
+      if (draggingTextId && textDragStartRef.current && canvasWrapperRef.current) {
+        const rect = canvasWrapperRef.current.getBoundingClientRect();
+        const deltaX = (e.clientX - textDragStartRef.current.startX) / rect.width;
+        const deltaY = (e.clientY - textDragStartRef.current.startY) / rect.height;
+
+        const newX = Math.min(0.9, Math.max(0, textDragStartRef.current.origX + deltaX));
+        const newY = Math.min(0.9, Math.max(0, textDragStartRef.current.origY + deltaY));
+
+        onUpdateTextPosition(draggingTextId, newX, newY);
+      }
+    };
+
+    const handleGlobalTouchMove = (e: TouchEvent) => {
+      if (draggingTextId && textDragStartRef.current && canvasWrapperRef.current && e.touches.length > 0) {
+        const rect = canvasWrapperRef.current.getBoundingClientRect();
+        const deltaX = (e.touches[0].clientX - textDragStartRef.current.startX) / rect.width;
+        const deltaY = (e.touches[0].clientY - textDragStartRef.current.startY) / rect.height;
+
+        const newX = Math.min(0.9, Math.max(0, textDragStartRef.current.origX + deltaX));
+        const newY = Math.min(0.9, Math.max(0, textDragStartRef.current.origY + deltaY));
+
+        onUpdateTextPosition(draggingTextId, newX, newY);
+      }
+    };
+
+    const handleGlobalPointerUp = () => {
+      if (isDraggingDivider) setIsDraggingDivider(false);
+      if (draggingTextId) setDraggingTextId(null);
+    };
+
+    window.addEventListener("mousemove", handleGlobalPointerMove);
+    window.addEventListener("mouseup", handleGlobalPointerUp);
+    window.addEventListener("touchmove", handleGlobalTouchMove);
+    window.addEventListener("touchend", handleGlobalPointerUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleGlobalPointerMove);
+      window.removeEventListener("mouseup", handleGlobalPointerUp);
+      window.removeEventListener("touchmove", handleGlobalTouchMove);
+      window.removeEventListener("touchend", handleGlobalPointerUp);
+    };
+  }, [isDraggingDivider, draggingTextId, onUpdateTextPosition, updateDividerPos]);
+
+  // File Upload Handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    setIsDraggingUpload(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDraggingUpload(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingUpload(false);
+      dragCounter.current = 0;
+
+      const file = e.dataTransfer.files?.[0];
+      if (file && ACCEPTED_TYPES.includes(file.type)) {
+        onImageSelect(file);
+      }
+    },
+    [onImageSelect]
+  );
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && ACCEPTED_TYPES.includes(file.type)) {
+      onImageSelect(file);
+    }
+  };
+
+  const handleConfirmCrop = () => {
+    if (onApplyCrop) {
+      onApplyCrop(cropBox);
+    }
+  };
+
+  const zoomScale = zoom / 100;
+
+  // Extract visible text layers
+  const textLayers = layers.filter((l) => l.type === "text" && l.textData && l.visible);
+
+  return (
+    <main
+      className="flex-1 bg-[#0a0a0c] relative overflow-hidden flex flex-col items-center justify-between p-6 select-none"
+      onClick={() => onSelectLayer(null)}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Top Controls Bar */}
+      <div className="w-full flex items-center justify-between px-2 pb-3 border-b border-[#26272b]/40 shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCompare();
+            }}
+            disabled={!hasImage}
+            className={`
+              flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded border transition-colors cursor-pointer font-semibold
+              ${
+                !hasImage
+                  ? "opacity-30 border-[#26272b] cursor-not-allowed text-[#9a9d9a]"
+                  : compareMode
+                  ? "bg-white text-black border-white font-bold"
+                  : "bg-[#131418] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+              }
+            `}
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M7.5 21L3 16.5m0 0L7.5 12m-4.5 4.5h18m-6-15L21 6m0 0l-4.5 4.5M21 6H3"
+              />
+            </svg>
+            Compare
+          </button>
+
+          {activeTool === "crop" && hasImage && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleConfirmCrop();
+              }}
+              className="px-3 py-1.5 rounded text-xs font-mono bg-[#4b9fef] text-[#0e0f12] font-bold hover:bg-[#3b8fd9] transition-colors cursor-pointer"
+            >
+              Apply Crop
+            </button>
+          )}
+        </div>
+
+        <div className="text-xs font-mono text-[#9a9d9a]/60 uppercase tracking-widest font-semibold">
+          {compareMode
+            ? "BEFORE / AFTER COMPARE"
+            : imageData
+            ? `RATIO ${imageData.width}:${imageData.height}`
+            : "CANVAS WELL"}
+        </div>
+      </div>
+
+      {/* Main Workspace Area with Dynamic Aspect Ratio */}
+      <div className="flex-1 w-full flex items-center justify-center relative overflow-auto py-4">
+        {!hasImage ? (
+          /* Empty State Placeholder */
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+            className={`
+              w-[480px] h-[320px] border border-dashed rounded-lg flex flex-col items-center justify-center p-8 gap-3.5
+              font-mono cursor-pointer transition-all duration-150 text-center
+              ${
+                isDraggingUpload
+                  ? "border-[#4b9fef] bg-[#4b9fef]/5 scale-[1.01]"
+                  : "border-[#26272b] bg-[#131418]/40 hover:border-[#9a9d9a] hover:bg-[#131418]/70"
+              }
+            `}
+            style={{ aspectRatio: "16 / 10" }}
+          >
+            <div className="w-12 h-12 border border-[#26272b] bg-[#131418] rounded flex items-center justify-center text-[#4b9fef]">
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 4.5v15m7.5-7.5h-15"
+                />
+              </svg>
+            </div>
+
+            <h3 className="text-base font-bold text-[#f0f0ec]">
+              {isDraggingUpload ? "Drop your image file here" : "No image loaded"}
+            </h3>
+
+            <p className="text-xs text-[#9a9d9a]">
+              Drag and drop, or click to open a file
+            </p>
+
+            <p className="text-[11px] text-[#9a9d9a]/50 uppercase tracking-widest mt-1 font-semibold">
+              Supports JPEG, PNG, WebP, AVIF
+            </p>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_TYPES.join(",")}
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </div>
+        ) : compareMode ? (
+          /* Dynamic Ratio Compare Slider */
+          <div
+            ref={compareContainerRef}
+            onMouseDown={handleCompareMouseDown}
+            onTouchStart={handleCompareTouchStart}
+            onTouchMove={handleCompareTouchMove}
+            onTouchEnd={handleCompareTouchEnd}
+            className="relative overflow-hidden border border-white/30 shadow-2xl flex items-center justify-center cursor-ew-resize select-none touch-none max-w-full max-h-full"
+            style={{
+              aspectRatio: imageAspectRatio,
+              transform: `scale(${zoomScale})`,
+            }}
+          >
+            {/* Bottom Layer: BEFORE Canvas */}
+            <canvas ref={beforeCanvasRef} className="block w-full h-full object-contain" />
+
+            {/* Top Layer: AFTER Canvas with clip-path */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                clipPath: `inset(0 ${100 - dividerPercent}% 0 0)`,
+              }}
+            >
+              <canvas ref={canvasRef} className="block w-full h-full object-contain" />
+            </div>
+
+            {/* Corner Labels */}
+            <div className="absolute bottom-3 left-3 text-[11px] font-mono text-white/40 font-bold uppercase tracking-widest pointer-events-none">
+              AFTER
+            </div>
+
+            <div className="absolute bottom-3 right-3 text-[11px] font-mono text-white/40 font-bold uppercase tracking-widest pointer-events-none">
+              BEFORE
+            </div>
+
+            {/* Vertical Divider Line & Grip Handle */}
+            <div
+              className="absolute top-0 bottom-0 z-30 pointer-events-none flex items-center justify-center"
+              style={{ left: `${dividerPercent}%`, transform: "translateX(-50%)" }}
+            >
+              <div className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_8px_rgba(0,0,0,0.8)]" />
+              <div className="relative w-8 h-8 rounded-full bg-white text-black flex items-center justify-center shadow-2xl border-2 border-black/40 hover:scale-110 transition-transform">
+                <svg
+                  className="w-4 h-4 text-black"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Normal Dynamic Canvas View + Interactive Draggable Text Layers */
+          <div
+            ref={canvasWrapperRef}
+            className="relative transition-transform duration-75 origin-center flex items-center justify-center border border-[#26272b]/60 max-w-full max-h-full"
+            style={{
+              aspectRatio: imageAspectRatio,
+              transform: `scale(${zoomScale})`,
+            }}
+          >
+            {/* Real Canvas */}
+            <canvas ref={canvasRef} className="block w-full h-full object-contain" />
+
+            {/* Interactive Draggable Text Layer Overlays */}
+            {textLayers.map((layer) => {
+              const t = layer.textData!;
+              const isSelected = selectedLayerId === layer.id;
+              return (
+                <div
+                  key={layer.id}
+                  onMouseDown={(e) => handleTextMouseDown(e, t)}
+                  onTouchStart={(e) => handleTextTouchStart(e, t)}
+                  className={`
+                    absolute font-mono font-bold cursor-move leading-none px-2 py-1 rounded transition-all select-none
+                    ${
+                      isSelected
+                        ? "border-2 border-dashed border-white bg-black/40 shadow-xl"
+                        : "border border-transparent hover:border-white/40"
+                    }
+                  `}
+                  style={{
+                    left: `${t.x * 100}%`,
+                    top: `${t.y * 100}%`,
+                    fontSize: `${t.fontSize * 0.4}px`, // scaled for CSS preview
+                    color: t.color,
+                  }}
+                >
+                  {t.text}
+                  {isSelected && (
+                    <>
+                      <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
+                      <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
+                      <div className="absolute -bottom-1 -left-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
+                      <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-white border border-black rounded-full" />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Crop Overlay when Crop tool is active */}
+            {activeTool === "crop" && (
+              <div
+                className="absolute border-2 border-dashed border-white bg-white/10 pointer-events-none"
+                style={{
+                  top: `${cropBox.y * 100}%`,
+                  left: `${cropBox.x * 100}%`,
+                  width: `${cropBox.width * 100}%`,
+                  height: `${cropBox.height * 100}%`,
+                }}
+              >
+                <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-black" />
+                <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-black" />
+                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-black" />
+                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-black" />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
