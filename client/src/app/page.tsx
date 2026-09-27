@@ -12,13 +12,14 @@ import {
   ExportSettings,
   CurvesData,
   SelectivePoint,
+  PhotoPreset,
 } from "@/types/editor";
 import TopBar from "@/components/TopBar";
 import LeftToolbar from "@/components/LeftToolbar";
 import CenterCanvas from "@/components/CenterCanvas";
 import RightPanel from "@/components/RightPanel";
 import BottomBar from "@/components/BottomBar";
-import FilterPresetsStrip, { PremiumLookPreset } from "@/components/FilterPresetsStrip";
+import FilterPresetsStrip from "@/components/FilterPresetsStrip";
 import ShortcutsOverlay from "@/components/ShortcutsOverlay";
 import { DEFAULT_CURVES } from "@/components/CurvesTool";
 import { useToast } from "@/components/Toast";
@@ -389,42 +390,57 @@ export default function Home() {
   );
 
   /**
-   * Non-destructive Look Preset Handler
+   * Non-destructive Professional Photo Preset Handler (with optional intensity scaling)
    */
-  const handleApplyLookPreset = useCallback(
-    (look: PremiumLookPreset) => {
+  const handleApplyPreset = useCallback(
+    (preset: PhotoPreset, intensity: number = 100) => {
+      const factor = intensity / 100;
+      const base = DEFAULT_ADJUSTMENTS;
+      const target = preset.adjustments;
+
       const nextAdj: Adjustments = {
-        ...adjustments,
-        ...(look.adjustments || {}),
-        temperature: look.temperature ?? look.adjustments?.temperature ?? adjustments.temperature,
-        tint: look.tint ?? look.adjustments?.tint ?? adjustments.tint,
-        structure: look.structure ?? look.adjustments?.structure ?? adjustments.structure,
-        vignette: look.vignette ?? look.adjustments?.vignette ?? adjustments.vignette,
-        grain: look.grain ?? look.adjustments?.grain ?? adjustments.grain,
+        exposure: Math.round(base.exposure + (target.exposure - base.exposure) * factor),
+        brightness: Math.round(base.brightness + (target.brightness - base.brightness) * factor),
+        contrast: Math.round(base.contrast + (target.contrast - base.contrast) * factor),
+        highlights: Math.round(base.highlights + (target.highlights - base.highlights) * factor),
+        shadows: Math.round(base.shadows + (target.shadows - base.shadows) * factor),
+        whites: Math.round(base.whites + (target.whites - base.whites) * factor),
+        blacks: Math.round(base.blacks + (target.blacks - base.blacks) * factor),
+        saturation: Math.round(base.saturation + (target.saturation - base.saturation) * factor),
+        vibrance: Math.round(base.vibrance + (target.vibrance - base.vibrance) * factor),
+        temperature: Math.round(base.temperature + (target.temperature - base.temperature) * factor),
+        tint: Math.round(base.tint + (target.tint - base.tint) * factor),
+        sharpness: Math.round(base.sharpness + (target.sharpness - base.sharpness) * factor),
+        clarity: Math.round(base.clarity + (target.clarity - base.clarity) * factor),
+        blur: Math.round(base.blur + (target.blur - base.blur) * factor),
+        grain: Math.round(base.grain + (target.grain - base.grain) * factor),
+        vignette: Math.round(base.vignette + (target.vignette - base.vignette) * factor),
       };
 
-      const nextCurves: CurvesData = look.curvePreset || curves;
+      const nextCurves: CurvesData = preset.curves || curves;
       const nextFilter: FilterSettings = {
-        id: look.id,
-        name: look.name,
+        id: preset.id,
+        name: preset.name,
         intensity: 100,
       };
 
       setAdjustments(nextAdj);
       updateAdjustments(nextAdj);
-      setCurves(nextCurves);
-      updateCurves(nextCurves);
+      if (preset.curves) {
+        setCurves(nextCurves);
+        updateCurves(nextCurves);
+      }
       updateFilter(nextFilter);
 
       pushHistory({
         adjustments: nextAdj,
-        curves: nextCurves,
+        curves: preset.curves ? nextCurves : undefined,
         filter: nextFilter,
       });
 
-      showToast(`Applied Look: ${look.name}`, "success");
+      showToast(`Applied preset: ${preset.name}`, "success");
     },
-    [adjustments, curves, updateAdjustments, updateCurves, updateFilter, pushHistory, showToast]
+    [curves, updateAdjustments, updateCurves, updateFilter, pushHistory, showToast]
   );
 
   /**
@@ -905,7 +921,7 @@ export default function Home() {
             updateFilter(f);
             pushHistory({ filter: f });
           }}
-          onApplyLookPreset={handleApplyLookPreset}
+          onApplyPreset={handleApplyPreset}
           transformState={transform}
           onUpdateTransform={handleUpdateTransform}
           onResetCrop={handleResetCrop}
@@ -939,7 +955,7 @@ export default function Home() {
       {hasImage && activeTool === "filter" && (
         <FilterPresetsStrip
           selectedPresetId={filterSettings.id}
-          onSelectPreset={handleApplyLookPreset}
+          onSelectPreset={handleApplyPreset}
         />
       )}
 

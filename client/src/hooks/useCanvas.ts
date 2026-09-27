@@ -10,7 +10,10 @@ import {
   SelectivePoint,
 } from "@/types/editor";
 import { DEFAULT_CURVES } from "@/components/CurvesTool";
+import { DEFAULT_ADJUSTMENTS } from "@/constants/presets";
 import { processPixelData } from "@/workers/imageProcessor.worker";
+
+export { DEFAULT_ADJUSTMENTS };
 
 export interface TransformState {
   rotation: number; // 0, 90, 180, 270
@@ -20,18 +23,6 @@ export interface TransformState {
   aspectRatioPreset?: "free" | "original" | "1:1" | "4:3" | "16:9" | "3:2" | "9:16";
   crop: { x: number; y: number; width: number; height: number } | null;
 }
-
-export const DEFAULT_ADJUSTMENTS: Adjustments = {
-  brightness: 0,
-  contrast: 0,
-  saturation: 0,
-  exposure: 0,
-  temperature: 0,
-  tint: 0,
-  structure: 0,
-  vignette: 0,
-  grain: 0,
-};
 
 const MAX_PREVIEW_DIMENSION = 1920;
 
@@ -199,13 +190,20 @@ export function useCanvas() {
     adjCtx.drawImage(offscreen, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
     const hasAnyAdjustments =
+      adj.exposure !== 0 ||
       adj.brightness !== 0 ||
       adj.contrast !== 0 ||
+      adj.highlights !== 0 ||
+      adj.shadows !== 0 ||
+      adj.whites !== 0 ||
+      adj.blacks !== 0 ||
       adj.saturation !== 0 ||
-      adj.exposure !== 0 ||
+      adj.vibrance !== 0 ||
       adj.temperature !== 0 ||
       adj.tint !== 0 ||
-      adj.structure !== 0 ||
+      (adj.sharpness ?? 0) > 0 ||
+      (adj.clarity ?? adj.structure ?? 0) !== 0 ||
+      (adj.blur ?? 0) > 0 ||
       adj.vignette !== 0 ||
       adj.grain > 0 ||
       filter.id !== "original" ||
