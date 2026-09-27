@@ -4,23 +4,31 @@ import { memo } from "react";
 import { GridMode } from "@/types/editor";
 
 interface TopBarProps {
+  hasImage?: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  compareMode?: boolean;
+  onToggleCompare?: () => void;
   gridMode: GridMode;
-  onToggleGrid: () => void;
+  onToggleGrid?: () => void;
+  onChangeGridMode?: (mode: GridMode) => void;
   onExport: () => void;
-  onFileSelect: (file: File) => void;
+  onFileSelect?: (file: File) => void;
 }
 
 const TopBar = memo(function TopBar({
+  hasImage,
   canUndo,
   canRedo,
   onUndo,
   onRedo,
+  compareMode,
+  onToggleCompare,
   gridMode,
   onToggleGrid,
+  onChangeGridMode,
   onExport,
   onFileSelect,
 }: TopBarProps) {
@@ -28,8 +36,18 @@ const TopBar = memo(function TopBar({
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (file && onFileSelect) {
       onFileSelect(file);
+    }
+  };
+
+  const handleCycleGrid = () => {
+    if (onToggleGrid) {
+      onToggleGrid();
+    } else if (onChangeGridMode) {
+      if (gridMode === "none") onChangeGridMode("thirds");
+      else if (gridMode === "thirds") onChangeGridMode("grid");
+      else onChangeGridMode("none");
     }
   };
 
@@ -68,6 +86,9 @@ const TopBar = memo(function TopBar({
           <span className="font-bold tracking-wider text-[#f0f0ec] text-xs">
             STUDIONORTH
           </span>
+          <span className="text-[9px] px-1.5 py-0.2 bg-[#4b9fef]/10 text-[#4b9fef] rounded border border-[#4b9fef]/20 font-bold">
+            PRO
+          </span>
         </div>
 
         <nav className="flex items-center gap-4 text-[#9a9d9a] text-[11px]">
@@ -93,91 +114,66 @@ const TopBar = memo(function TopBar({
         </nav>
       </div>
 
-      {/* Right: Grid toggle, History controls & Primary Export button */}
-      <div className="flex items-center gap-4">
+      {/* Right: Compare mode, Grid, History controls & Export */}
+      <div className="flex items-center gap-3">
+        {/* Before / After Compare Slider Toggle */}
+        {hasImage && onToggleCompare && (
+          <button
+            onClick={onToggleCompare}
+            className={`
+              px-2 py-0.5 text-[11px] rounded border transition-colors cursor-pointer flex items-center gap-1
+              ${
+                compareMode
+                  ? "bg-[#4b9fef] text-black border-[#4b9fef] font-bold"
+                  : "bg-[#18191e] border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+              }
+            `}
+            title="Split Before / After compare slider"
+          >
+            ↔ Compare
+          </button>
+        )}
+
         {/* Grid Mode Guide Overlay Toggle */}
         <button
-          onClick={onToggleGrid}
-          title="Toggle Grid Guide Overlays"
+          onClick={handleCycleGrid}
           className={`
-            px-2.5 py-1 rounded border text-[11px] font-mono transition-colors cursor-pointer font-semibold
+            px-2 py-0.5 text-[10px] font-mono rounded border transition-colors cursor-pointer
             ${
               gridMode !== "none"
                 ? "bg-[#4b9fef]/15 text-[#4b9fef] border-[#4b9fef]/40"
-                : "bg-[#0e0f12] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+                : "bg-transparent text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
             }
           `}
+          title="Toggle Grid / Rule of Thirds"
         >
           {getGridLabel()}
         </button>
 
-        {/* Undo / Redo buttons */}
-        <div className="flex items-center gap-1">
+        {/* Undo / Redo */}
+        <div className="flex items-center gap-1 bg-[#18191e] border border-[#26272b] rounded p-0.5">
           <button
             onClick={onUndo}
             disabled={!canUndo}
+            className="w-6 h-6 flex items-center justify-center rounded text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors"
             title="Undo (Ctrl+Z)"
-            className={`
-              w-7 h-7 flex items-center justify-center rounded transition-colors
-              ${
-                canUndo
-                  ? "text-[#f0f0ec] hover:text-[#4b9fef] hover:bg-[#26272b] cursor-pointer"
-                  : "text-[#9a9d9a]/30 cursor-not-allowed"
-              }
-            `}
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
-              />
-            </svg>
+            ↶
           </button>
-
           <button
             onClick={onRedo}
             disabled={!canRedo}
-            title="Redo (Ctrl+Y)"
-            className={`
-              w-7 h-7 flex items-center justify-center rounded transition-colors
-              ${
-                canRedo
-                  ? "text-[#f0f0ec] hover:text-[#4b9fef] hover:bg-[#26272b] cursor-pointer"
-                  : "text-[#9a9d9a]/30 cursor-not-allowed"
-              }
-            `}
+            className="w-6 h-6 flex items-center justify-center rounded text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors"
+            title="Redo (Ctrl+Shift+Z)"
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3"
-              />
-            </svg>
+            ↷
           </button>
         </div>
 
-        {/* Primary Export Button */}
+        {/* Export Button */}
         <button
           onClick={onExport}
-          className="
-            flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium font-mono
-            bg-[#4b9fef] hover:bg-[#3b8fd9] text-[#0e0f12] font-semibold
-            transition-colors duration-150 cursor-pointer shadow-sm
-          "
+          className="h-7 px-3 bg-[#4b9fef] hover:bg-[#3b8fe0] text-black font-bold text-xs rounded transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
         >
           <svg
             className="w-3.5 h-3.5"

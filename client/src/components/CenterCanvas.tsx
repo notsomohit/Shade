@@ -1,7 +1,15 @@
 "use client";
 
 import { RefObject, useState, useCallback, useRef, useEffect, memo } from "react";
-import { ToolType, LayerItem, TextOverlay, ImageMetaData, Adjustments } from "@/types/editor";
+import {
+  ToolType,
+  LayerItem,
+  TextOverlay,
+  ImageMetaData,
+  Adjustments,
+  SelectivePoint,
+} from "@/types/editor";
+import { TransformState } from "@/hooks/useCanvas";
 
 interface CenterCanvasProps {
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -14,10 +22,18 @@ interface CenterCanvasProps {
   layers: LayerItem[];
   selectedLayerId: string | null;
   adjustments: Adjustments;
+  selectivePoints: SelectivePoint[];
+  selectedSelectivePointId: string | null;
+  isEyedropperActive?: boolean;
+  transformState?: TransformState;
   onSelectLayer: (id: string | null) => void;
+  onSelectSelectivePoint: (id: string | null) => void;
+  onAddSelectivePointAt: (normX: number, normY: number) => void;
+  onUpdateSelectivePoint: (id: string, updates: Partial<SelectivePoint>) => void;
+  onSampleWhiteBalance?: (normX: number, normY: number) => void;
   onUpdateTextPosition: (id: string, x: number, y: number) => void;
   onUpdateTextFontSize: (id: string, fontSize: number) => void;
-  onDeleteLayer: (id: string) => void;
+  onDeleteLayer?: (id: string) => void;
   onToggleCompare: () => void;
   onImageSelect: (file: File) => void;
   onApplyCrop?: (crop: { x: number; y: number; width: number; height: number }) => void;
@@ -25,6 +41,8 @@ interface CenterCanvasProps {
 }
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+
+type CropHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w" | "move";
 
 const CenterCanvas = memo(function CenterCanvas({
   canvasRef,
@@ -36,574 +54,937 @@ const CenterCanvas = memo(function CenterCanvas({
   compareMode,
   layers,
   selectedLayerId,
-  adjustments,
+  selectivePoints,
+  selectedSelectivePointId,
+  isEyedropperActive = false,
+  transformState,
   onSelectLayer,
+  onSelectSelectivePoint,
+  onAddSelectivePointAt,
+  onUpdateSelectivePoint,
+  onSampleWhiteBalance,
   onUpdateTextPosition,
   onUpdateTextFontSize,
-  onDeleteLayer,
-  onToggleCompare,
   onImageSelect,
   onApplyCrop,
   renderPipeline,
 }: CenterCanvasProps) {
-  // Track if a pointer-down on a text layer just happened so the main
-  // deselect handler (also on mousedown) knows to skip deselecting.
   const textInteractingRef = useRef(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+
+  // Pan offset state for moving canvas view
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ startX: 0, startY: 0, origPanX: 0, origPanY: 0 });
+
+  // Compare Slider State (percentage 2..98)
   const [dividerPercent, setDividerPercent] = useState<number>(50);
-  const [isDraggingDivider, setIsDraggingDivider] = useState(false);
-
-  // Active dragging state for text layers
-  const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
-  const textDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
-
-  // Corner handle resizing state
-  const [resizingTextId, setResizingTextId] = useState<string | null>(null);
-  const fontResizeRef = useRef<{ startX: number; startY: number; origSize: number } | null>(null);
-
-  const [cropBox] = useState({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
+  const isDraggingDividerRef = useRef(false);
   const compareContainerRef = useRef<HTMLDivElement>(null);
+
+  // DOM Refs for high performance
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
-  const rafRef = useRef<number | null>(null);
+
+  // Interactive 8-Handle Crop State
+  const [cropRect, setCropRect] = useState({ x: 0.05, y: 0.05, width: 0.9, height: 0.9 });
+  const cropDragRef = useRef<{
+    handle: CropHandle;
+    startX: number;
+    startY: number;
+    origRect: { x: number; y: number; width: number; height: number };
+    currentRect: { x: number; y: number; width: number; height: number };
+  } | null>(null);
+  const cropBoxDOMRef = useRef<HTMLDivElement>(null);
+
+  // Text drag & resize mutable state
+  const textDragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    currentX: number;
+    currentY: number;
+    domEl: HTMLElement | null;
+  } | null>(null);
+
+  const textResizeRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    origSize: number;
+    currentSize: number;
+    domEl: HTMLElement | null;
+  } | null>(null);
+
+  // Selective point drag & radius resize mutable state
+  const pointDragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    currentX: number;
+    currentY: number;
+    domEl: HTMLElement | null;
+  } | null>(null);
+
+  const pointRadiusRef = useRef<{
+    id: string;
+    startX: number;
+    origRadius: number;
+    currentRadius: number;
+    ringEl: HTMLElement | null;
+  } | null>(null);
 
   const zoomScale = zoom / 100;
   const imageAspectRatio = imageData ? `${imageData.width} / ${imageData.height}` : "16 / 10";
 
-  // Trigger render whenever canvas is mounted or hasImage becomes true
+  // Trigger render when image mounts or compare toggles
   useEffect(() => {
     if (hasImage) {
-      const timer = setTimeout(() => {
+      const id = requestAnimationFrame(() => {
         renderPipeline();
-      }, 20);
-      return () => clearTimeout(timer);
+      });
+      return () => cancelAnimationFrame(id);
     }
   }, [hasImage, compareMode, renderPipeline]);
 
-  // Pointer position calculation helper for Compare slider
-  const updateDividerPos = useCallback((clientX: number) => {
+  // Sync crop aspect ratio preset if set
+  useEffect(() => {
+    if (transformState?.aspectRatioPreset && transformState.aspectRatioPreset !== "free") {
+      let targetRatio = 1;
+      if (transformState.aspectRatioPreset === "1:1") targetRatio = 1;
+      else if (transformState.aspectRatioPreset === "4:3") targetRatio = 4 / 3;
+      else if (transformState.aspectRatioPreset === "16:9") targetRatio = 16 / 9;
+      else if (transformState.aspectRatioPreset === "3:2") targetRatio = 3 / 2;
+      else if (transformState.aspectRatioPreset === "9:16") targetRatio = 9 / 16;
+      else if (transformState.aspectRatioPreset === "original" && imageData) {
+        targetRatio = imageData.width / imageData.height;
+      }
+
+      const imgRatio = imageData ? imageData.width / imageData.height : 1;
+      let newW = 0.85;
+      let newH = newW / (targetRatio / imgRatio);
+      if (newH > 0.85) {
+        newH = 0.85;
+        newW = newH * (targetRatio / imgRatio);
+      }
+      const newX = (1 - newW) / 2;
+      const newY = (1 - newH) / 2;
+      setCropRect({ x: newX, y: newY, width: newW, height: newH });
+    }
+  }, [transformState?.aspectRatioPreset, imageData]);
+
+  // Compare Divider pointer calculation
+  const updateDividerPosFromClientX = useCallback((clientX: number) => {
     if (!compareContainerRef.current) return;
     const rect = compareContainerRef.current.getBoundingClientRect();
-    const offsetX = clientX - rect.left;
-    const pct = (offsetX / rect.width) * 100;
+    if (rect.width <= 0) return;
+    const pct = ((clientX - rect.left) / rect.width) * 100;
     const clampedPct = Math.min(98, Math.max(2, pct));
     setDividerPercent(clampedPct);
   }, []);
 
-  const handleCompareMouseDown = (e: React.MouseEvent) => {
+  const handleComparePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
-    setIsDraggingDivider(true);
-    updateDividerPos(e.clientX);
+    isDraggingDividerRef.current = true;
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    updateDividerPosFromClientX(clientX);
   };
 
-  const handleCompareTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length > 0) {
-      setIsDraggingDivider(true);
-      updateDividerPos(e.touches[0].clientX);
+  // Canvas Container Click (Deselect text, Eyedropper, or Add Selective Point)
+  const handleCanvasContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!hasImage || !canvasWrapperRef.current) return;
+    if (textInteractingRef.current) {
+      textInteractingRef.current = false;
+      return;
+    }
+
+    const rect = canvasWrapperRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const normX = Math.min(1, Math.max(0, clickX / rect.width));
+    const normY = Math.min(1, Math.max(0, clickY / rect.height));
+
+    if (isEyedropperActive && onSampleWhiteBalance) {
+      onSampleWhiteBalance(normX, normY);
+      return;
+    }
+
+    if (activeTool === "selective" && !pointDragRef.current && !pointRadiusRef.current) {
+      onAddSelectivePointAt(normX, normY);
+      return;
+    }
+
+    // Clicked on image background -> Deselect active text layer or control point
+    if (selectedLayerId) {
+      onSelectLayer(null);
+    }
+    if (selectedSelectivePointId) {
+      onSelectSelectivePoint(null);
     }
   };
 
-  const handleCompareTouchMove = (e: React.TouchEvent) => {
-    if (isDraggingDivider && e.touches.length > 0) {
-      e.preventDefault();
-      updateDividerPos(e.touches[0].clientX);
+  // Outer Workspace Click -> Deselect text when clicking outside
+  const handleMainClick = (e: React.MouseEvent) => {
+    if (textInteractingRef.current) {
+      textInteractingRef.current = false;
+      return;
+    }
+    if (e.target === e.currentTarget) {
+      if (selectedLayerId) onSelectLayer(null);
+      if (selectedSelectivePointId) onSelectSelectivePoint(null);
     }
   };
 
-  const handleCompareTouchEnd = () => {
-    setIsDraggingDivider(false);
+  // Crop Drag Handler Start
+  const handleCropHandleDown = (e: React.MouseEvent | React.TouchEvent, handle: CropHandle) => {
+    e.stopPropagation();
+    e.preventDefault();
+    textInteractingRef.current = true;
+
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+    cropDragRef.current = {
+      handle,
+      startX: clientX,
+      startY: clientY,
+      origRect: { ...cropRect },
+      currentRect: { ...cropRect },
+    };
   };
 
-  // Text Layer Drag Handler
+  // Text Layer Drag Handlers
   const handleTextPointerDown = (
     e: React.MouseEvent | React.TouchEvent,
-    textItem: TextOverlay
+    id: string,
+    curX: number,
+    curY: number
   ) => {
-    // Mark that interaction is with a text layer so the main onMouseDown
-    // deselect handler does not clear the selection.
-    textInteractingRef.current = true;
     e.stopPropagation();
-    onSelectLayer(textItem.id);
-    setDraggingTextId(textItem.id);
+    textInteractingRef.current = true;
+    onSelectLayer(id);
 
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const target = e.currentTarget as HTMLElement;
 
     textDragRef.current = {
+      id,
       startX: clientX,
       startY: clientY,
-      origX: textItem.x,
-      origY: textItem.y,
+      origX: curX,
+      origY: curY,
+      currentX: curX,
+      currentY: curY,
+      domEl: target,
     };
   };
 
-  // Corner Anchor Handle Resize Handler
-  const handleAnchorResizeDown = (
+  const handleResizeHandleDown = (
     e: React.MouseEvent | React.TouchEvent,
-    textItem: TextOverlay
+    id: string,
+    fontSize: number
   ) => {
     e.stopPropagation();
-    onSelectLayer(textItem.id);
-    setResizingTextId(textItem.id);
+    textInteractingRef.current = true;
 
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const parentEl = (e.currentTarget as HTMLElement).parentElement;
 
-    fontResizeRef.current = {
+    textResizeRef.current = {
+      id,
       startX: clientX,
       startY: clientY,
-      origSize: textItem.fontSize,
+      origSize: fontSize,
+      currentSize: fontSize,
+      domEl: parentEl,
     };
   };
 
-  // Global window listeners using requestAnimationFrame for smooth 60 FPS dragging
-  useEffect(() => {
-    const handlePointerMove = (clientX: number, clientY: number) => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  // Selective Point Drag Handlers
+  const handlePointPinDown = (
+    e: React.MouseEvent | React.TouchEvent,
+    point: SelectivePoint
+  ) => {
+    e.stopPropagation();
+    textInteractingRef.current = true;
+    onSelectSelectivePoint(point.id);
 
-      rafRef.current = requestAnimationFrame(() => {
-        if (isDraggingDivider) {
-          updateDividerPos(clientX);
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const target = e.currentTarget as HTMLElement;
+
+    pointDragRef.current = {
+      id: point.id,
+      startX: clientX,
+      startY: clientY,
+      origX: point.x,
+      origY: point.y,
+      currentX: point.x,
+      currentY: point.y,
+      domEl: target,
+    };
+  };
+
+  const handlePointRadiusHandleDown = (
+    e: React.MouseEvent | React.TouchEvent,
+    point: SelectivePoint
+  ) => {
+    e.stopPropagation();
+    textInteractingRef.current = true;
+    onSelectSelectivePoint(point.id);
+
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const ring = (e.currentTarget as HTMLElement).parentElement;
+
+    pointRadiusRef.current = {
+      id: point.id,
+      startX: clientX,
+      origRadius: point.radius,
+      currentRadius: point.radius,
+      ringEl: ring,
+    };
+  };
+
+  // Canvas Viewport Pan Handler (Space + Drag or Middle Click)
+  const handleMainPointerDown = (e: React.MouseEvent) => {
+    if (e.button === 1 || e.shiftKey || e.altKey) {
+      e.preventDefault();
+      isPanningRef.current = true;
+      panStartRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        origPanX: panOffset.x,
+        origPanY: panOffset.y,
+      };
+    }
+  };
+
+  // Global Pointer Listeners (rAF throttled)
+  useEffect(() => {
+    let animFrameId: number | null = null;
+
+    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+
+      animFrameId = requestAnimationFrame(() => {
+        // Compare Divider Drag
+        if (isDraggingDividerRef.current) {
+          updateDividerPosFromClientX(clientX);
         }
 
-        // Text Layer Position Drag
-        if (draggingTextId && textDragRef.current && canvasWrapperRef.current) {
+        // Panning Canvas Viewport
+        if (isPanningRef.current) {
+          const dx = clientX - panStartRef.current.startX;
+          const dy = clientY - panStartRef.current.startY;
+          setPanOffset({
+            x: panStartRef.current.origPanX + dx,
+            y: panStartRef.current.origPanY + dy,
+          });
+        }
+
+        // Interactive Crop Drag / Resize
+        if (cropDragRef.current && canvasWrapperRef.current) {
+          const rect = canvasWrapperRef.current.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const dx = (clientX - cropDragRef.current.startX) / rect.width;
+            const dy = (clientY - cropDragRef.current.startY) / rect.height;
+            const { handle, origRect } = cropDragRef.current;
+            let { x, y, width, height } = origRect;
+
+            if (handle === "move") {
+              x = Math.max(0, Math.min(1 - width, origRect.x + dx));
+              y = Math.max(0, Math.min(1 - height, origRect.y + dy));
+            } else {
+              if (handle.includes("w")) {
+                const maxDx = origRect.width - 0.05;
+                const clampedDx = Math.max(-origRect.x, Math.min(maxDx, dx));
+                x = origRect.x + clampedDx;
+                width = origRect.width - clampedDx;
+              }
+              if (handle.includes("e")) {
+                width = Math.max(0.05, Math.min(1 - origRect.x, origRect.width + dx));
+              }
+              if (handle.includes("n")) {
+                const maxDy = origRect.height - 0.05;
+                const clampedDy = Math.max(-origRect.y, Math.min(maxDy, dy));
+                y = origRect.y + clampedDy;
+                height = origRect.height - clampedDy;
+              }
+              if (handle.includes("s")) {
+                height = Math.max(0.05, Math.min(1 - origRect.y, origRect.height + dy));
+              }
+            }
+
+            cropDragRef.current.currentRect = { x, y, width, height };
+
+            if (cropBoxDOMRef.current) {
+              cropBoxDOMRef.current.style.left = `${x * 100}%`;
+              cropBoxDOMRef.current.style.top = `${y * 100}%`;
+              cropBoxDOMRef.current.style.width = `${width * 100}%`;
+              cropBoxDOMRef.current.style.height = `${height * 100}%`;
+            }
+          }
+        }
+
+        // Text Dragging
+        if (textDragRef.current && canvasWrapperRef.current) {
           const rect = canvasWrapperRef.current.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             const deltaX = (clientX - textDragRef.current.startX) / rect.width;
             const deltaY = (clientY - textDragRef.current.startY) / rect.height;
+            const nextX = Math.max(0, Math.min(0.95, textDragRef.current.origX + deltaX));
+            const nextY = Math.max(0, Math.min(0.95, textDragRef.current.origY + deltaY));
+            textDragRef.current.currentX = nextX;
+            textDragRef.current.currentY = nextY;
 
-            const newX = Math.min(0.95, Math.max(0, textDragRef.current.origX + deltaX));
-            const newY = Math.min(0.95, Math.max(0, textDragRef.current.origY + deltaY));
-
-            onUpdateTextPosition(draggingTextId, newX, newY);
+            if (textDragRef.current.domEl) {
+              textDragRef.current.domEl.style.left = `${nextX * 100}%`;
+              textDragRef.current.domEl.style.top = `${nextY * 100}%`;
+            }
           }
         }
 
-        // Corner Anchor Font Size Resize Drag
-        if (resizingTextId && fontResizeRef.current) {
-          const delta = clientX - fontResizeRef.current.startX + (clientY - fontResizeRef.current.startY);
-          const scaleFactor = 0.5;
-          const newSize = Math.round(
-            Math.min(160, Math.max(12, fontResizeRef.current.origSize + delta * scaleFactor))
+        // Text Resizing
+        if (textResizeRef.current) {
+          const deltaX = clientX - textResizeRef.current.startX;
+          const deltaY = clientY - textResizeRef.current.startY;
+          const distDelta = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          const sign = deltaX + deltaY > 0 ? 1 : -1;
+          const newSize = Math.max(
+            12,
+            Math.min(240, Math.round(textResizeRef.current.origSize + sign * distDelta * 0.4))
           );
-          onUpdateTextFontSize(resizingTextId, newSize);
+          textResizeRef.current.currentSize = newSize;
+
+          if (textResizeRef.current.domEl) {
+            textResizeRef.current.domEl.style.fontSize = `${newSize}px`;
+          }
+        }
+
+        // Selective Point Dragging
+        if (pointDragRef.current && canvasWrapperRef.current) {
+          const rect = canvasWrapperRef.current.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const deltaX = (clientX - pointDragRef.current.startX) / rect.width;
+            const deltaY = (clientY - pointDragRef.current.startY) / rect.height;
+            const nextX = Math.max(0.01, Math.min(0.99, pointDragRef.current.origX + deltaX));
+            const nextY = Math.max(0.01, Math.min(0.99, pointDragRef.current.origY + deltaY));
+            pointDragRef.current.currentX = nextX;
+            pointDragRef.current.currentY = nextY;
+
+            if (pointDragRef.current.domEl) {
+              pointDragRef.current.domEl.style.left = `${nextX * 100}%`;
+              pointDragRef.current.domEl.style.top = `${nextY * 100}%`;
+            }
+          }
+        }
+
+        // Selective Point Radius Resizing
+        if (pointRadiusRef.current && canvasWrapperRef.current) {
+          const rect = canvasWrapperRef.current.getBoundingClientRect();
+          const minDim = Math.min(rect.width, rect.height);
+          if (minDim > 0) {
+            const deltaX = clientX - pointRadiusRef.current.startX;
+            const deltaRadius = deltaX / minDim;
+            const nextRadius = Math.max(
+              0.05,
+              Math.min(0.7, pointRadiusRef.current.origRadius + deltaRadius)
+            );
+            pointRadiusRef.current.currentRadius = nextRadius;
+
+            if (pointRadiusRef.current.ringEl) {
+              pointRadiusRef.current.ringEl.style.width = `${nextRadius * 200}%`;
+              pointRadiusRef.current.ringEl.style.height = `${nextRadius * 200}%`;
+            }
+          }
         }
       });
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      handlePointerMove(e.clientX, e.clientY);
-    };
+    const handlePointerUp = () => {
+      isDraggingDividerRef.current = false;
+      isPanningRef.current = false;
 
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+      // Commit Crop final coordinates
+      if (cropDragRef.current) {
+        const finalRect = cropDragRef.current.currentRect;
+        setCropRect(finalRect);
+        cropDragRef.current = null;
+      }
+
+      // Commit Text Drag final coordinates
+      if (textDragRef.current) {
+        onUpdateTextPosition(
+          textDragRef.current.id,
+          textDragRef.current.currentX,
+          textDragRef.current.currentY
+        );
+        textDragRef.current = null;
+      }
+
+      // Commit Text Resize final font size
+      if (textResizeRef.current) {
+        onUpdateTextFontSize(
+          textResizeRef.current.id,
+          textResizeRef.current.currentSize
+        );
+        textResizeRef.current = null;
+      }
+
+      // Commit Selective Point final coordinates
+      if (pointDragRef.current) {
+        onUpdateSelectivePoint(pointDragRef.current.id, {
+          x: pointDragRef.current.currentX,
+          y: pointDragRef.current.currentY,
+        });
+        pointDragRef.current = null;
+      }
+
+      // Commit Selective Point final radius
+      if (pointRadiusRef.current) {
+        onUpdateSelectivePoint(pointRadiusRef.current.id, {
+          radius: pointRadiusRef.current.currentRadius,
+        });
+        pointRadiusRef.current = null;
       }
     };
 
-    const handlePointerUp = () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (isDraggingDivider) setIsDraggingDivider(false);
-      if (draggingTextId) setDraggingTextId(null);
-      if (resizingTextId) setResizingTextId(null);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handlePointerMove, { passive: true });
     window.addEventListener("mouseup", handlePointerUp);
-    window.addEventListener("touchmove", handleTouchMove);
+    window.addEventListener("touchmove", handlePointerMove, { passive: true });
     window.addEventListener("touchend", handlePointerUp);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mousemove", handlePointerMove);
       window.removeEventListener("mouseup", handlePointerUp);
-      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchmove", handlePointerMove);
       window.removeEventListener("touchend", handlePointerUp);
+      if (animFrameId) cancelAnimationFrame(animFrameId);
     };
-  }, [isDraggingDivider, draggingTextId, resizingTextId, onUpdateTextPosition, onUpdateTextFontSize, updateDividerPos]);
+  }, [
+    updateDividerPosFromClientX,
+    onUpdateTextPosition,
+    onUpdateTextFontSize,
+    onUpdateSelectivePoint,
+  ]);
 
-  // File Upload Handlers
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
+  // Drag-and-drop file uploader
+  const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current++;
-    setIsDraggingUpload(true);
-  }, []);
+    dragCounter.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDraggingUpload(true);
+    }
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current--;
+    dragCounter.current -= 1;
     if (dragCounter.current === 0) {
       setIsDraggingUpload(false);
     }
-  }, []);
+  };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-  }, []);
+  };
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingUpload(false);
-      dragCounter.current = 0;
-
-      const file = e.dataTransfer.files?.[0];
-      if (file && ACCEPTED_TYPES.includes(file.type)) {
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingUpload(false);
+    dragCounter.current = 0;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (ACCEPTED_TYPES.includes(file.type)) {
         onImageSelect(file);
       }
-    },
-    [onImageSelect]
-  );
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && ACCEPTED_TYPES.includes(file.type)) {
-      onImageSelect(file);
     }
   };
 
-  const handleConfirmCrop = () => {
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onImageSelect(e.target.files[0]);
+    }
+  };
+
+  const applyActiveCrop = () => {
     if (onApplyCrop) {
-      onApplyCrop(cropBox);
+      onApplyCrop(cropRect);
     }
   };
-
-  const textLayers = layers.filter((l) => l.type === "text" && l.textData && l.visible);
-
-  // Build CSS filter string for live preview during slider drag.
-  // This is cheap (GPU compositing) and gives instant feedback.
-  const cssAdjustFilter = [
-    adjustments.brightness !== 0
-      ? `brightness(${1 + (adjustments.brightness / 100) * 0.4})`
-      : "",
-    adjustments.contrast !== 0
-      ? `contrast(${1 + (adjustments.contrast / 100) * 0.6})`
-      : "",
-    adjustments.saturation !== 0
-      ? `saturate(${1 + (adjustments.saturation / 100) * 0.75})`
-      : "",
-    adjustments.exposure !== 0
-      ? `brightness(${Math.pow(2, (adjustments.exposure / 100) * 0.5).toFixed(3)})`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
 
   return (
     <main
-      className="flex-1 bg-[#0a0a0c] relative overflow-hidden flex flex-col items-center justify-between p-6 select-none"
-      onMouseDown={(e) => {
-        // Only deselect when clicking directly on the canvas backdrop,
-        // not when the event bubbled from a text layer (stopPropagation handles
-        // that, but we also guard with the ref for extra safety).
-        if (textInteractingRef.current) {
-          textInteractingRef.current = false;
-          return;
-        }
-        onSelectLayer(null);
-      }}
+      onClick={handleMainClick}
+      onMouseDown={handleMainPointerDown}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      className="flex-1 h-full bg-[#0a0a0c] flex items-center justify-center p-6 relative overflow-hidden select-none"
     >
-      {/* Top Controls Bar */}
-      <div className="w-full flex items-center justify-between px-2 pb-3 border-b border-[#26272b]/40 shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleCompare();
-            }}
-            disabled={!hasImage}
-            className={`
-              flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded border transition-colors cursor-pointer font-semibold
-              ${
-                !hasImage
-                  ? "opacity-30 border-[#26272b] cursor-not-allowed text-[#9a9d9a]"
-                  : compareMode
-                  ? "bg-white text-black border-white font-bold"
-                  : "bg-[#131418] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
-              }
-            `}
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M7.5 21L3 16.5m0 0L7.5 12m-4.5 4.5h18m-6-15L21 6m0 0l-4.5 4.5M21 6H3"
-              />
-            </svg>
-            Compare
-          </button>
+      {/* Background Grid Pattern */}
+      <div
+        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, #f0f0ec 1px, transparent 0)",
+          backgroundSize: "20px 20px",
+        }}
+      />
 
-          {activeTool === "crop" && hasImage && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleConfirmCrop();
-              }}
-              className="px-3 py-1.5 rounded text-xs font-mono bg-[#4b9fef] text-[#0e0f12] font-bold hover:bg-[#3b8fd9] transition-colors cursor-pointer"
-            >
-              Apply Crop
-            </button>
-          )}
+      {/* Eyedropper indicator banner */}
+      {isEyedropperActive && (
+        <div className="absolute top-4 z-40 px-4 py-2 bg-[#4b9fef] text-black font-mono font-bold text-xs rounded-full shadow-xl flex items-center gap-2 animate-bounce">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+          </svg>
+          Click anywhere on the photo to calibrate White Balance
         </div>
+      )}
 
-        <div className="text-xs font-mono text-[#9a9d9a]/60 uppercase tracking-widest font-semibold">
-          {compareMode
-            ? "BEFORE / AFTER COMPARE"
-            : imageData
-            ? `RATIO ${imageData.width}:${imageData.height}`
-            : "CANVAS WELL"}
-        </div>
-      </div>
-
-      {/* Main Workspace Area */}
-      <div className="flex-1 w-full flex items-center justify-center relative overflow-auto py-4">
-        {!hasImage ? (
-          /* Empty State Placeholder */
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              fileInputRef.current?.click();
-            }}
-            className={`
-              w-[480px] h-[320px] border border-dashed rounded-lg flex flex-col items-center justify-center p-8 gap-3.5
-              font-mono cursor-pointer transition-all duration-150 text-center
-              ${
-                isDraggingUpload
-                  ? "border-[#4b9fef] bg-[#4b9fef]/5 scale-[1.01]"
-                  : "border-[#26272b] bg-[#131418]/40 hover:border-[#9a9d9a] hover:bg-[#131418]/70"
-              }
-            `}
-            style={{ aspectRatio: "16 / 10" }}
-          >
-            <div className="w-12 h-12 border border-[#26272b] bg-[#131418] rounded flex items-center justify-center text-[#4b9fef]">
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 4.5v15m7.5-7.5h-15"
-                />
-              </svg>
-            </div>
-
-            <h3 className="text-base font-bold text-[#f0f0ec]">
-              {isDraggingUpload ? "Drop your image file here" : "No image loaded"}
-            </h3>
-
-            <p className="text-xs text-[#9a9d9a]">
-              Drag and drop, or click to open a file
-            </p>
-
-            <p className="text-[11px] text-[#9a9d9a]/50 uppercase tracking-widest mt-1 font-semibold">
-              Supports JPEG, PNG, WebP, AVIF
-            </p>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ACCEPTED_TYPES.join(",")}
-              onChange={handleFileChange}
-              className="hidden"
-            />
+      {/* Drag upload overlay */}
+      {isDraggingUpload && (
+        <div className="absolute inset-0 bg-[#4b9fef]/10 border-2 border-dashed border-[#4b9fef] z-50 flex items-center justify-center backdrop-blur-sm pointer-events-none">
+          <div className="text-center font-mono">
+            <span className="text-[#4b9fef] text-lg font-bold">
+              Drop image to load
+            </span>
           </div>
-        ) : compareMode ? (
-          /* Compare View */
-          <div
-            ref={compareContainerRef}
-            onMouseDown={handleCompareMouseDown}
-            onTouchStart={handleCompareTouchStart}
-            onTouchMove={handleCompareTouchMove}
-            onTouchEnd={handleCompareTouchEnd}
-            className="relative overflow-hidden border border-white/30 shadow-2xl flex items-center justify-center cursor-ew-resize select-none touch-none max-w-full max-h-full"
+        </div>
+      )}
+
+      {/* Before / After Comparison Slider */}
+      {hasImage && compareMode && (
+        <div
+          ref={compareContainerRef}
+          onMouseDown={handleComparePointerDown}
+          onTouchStart={handleComparePointerDown}
+          className="relative max-w-full max-h-full rounded-lg shadow-2xl border border-[#26272b] overflow-hidden cursor-ew-resize select-none touch-none"
+          style={{
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
+            transformOrigin: "center center",
+            aspectRatio: imageAspectRatio,
+          }}
+        >
+          {/* Bottom Layer: ORIGINAL (Before) Canvas (in-flow to give wrapper dimensions) */}
+          <canvas
+            ref={beforeCanvasRef}
+            className="block w-full h-full object-contain pointer-events-none"
+          />
+
+          {/* Top Layer: EDITED (After) Canvas (Positioned absolute & clipped to dividerPercent) */}
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
             style={{
-              aspectRatio: imageAspectRatio,
-              transform: `scale(${zoomScale})`,
+              clipPath: `inset(0 ${100 - dividerPercent}% 0 0)`,
             }}
+          />
+
+          {/* Draggable Divider Line & Handle */}
+          <div
+            className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_10px_rgba(0,0,0,0.8)] z-30 pointer-events-none"
+            style={{ left: `${dividerPercent}%` }}
           >
-            <canvas ref={beforeCanvasRef} className="block w-full h-full object-contain" />
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                clipPath: `inset(0 ${100 - dividerPercent}% 0 0)`,
-              }}
-            >
-              <canvas ref={canvasRef} className="block w-full h-full object-contain" />
-            </div>
-
-            <div className="absolute bottom-3 left-3 text-[11px] font-mono text-white/40 font-bold uppercase tracking-widest pointer-events-none">
-              AFTER
-            </div>
-
-            <div className="absolute bottom-3 right-3 text-[11px] font-mono text-white/40 font-bold uppercase tracking-widest pointer-events-none">
-              BEFORE
-            </div>
-
-            <div
-              className="absolute top-0 bottom-0 z-30 pointer-events-none flex items-center justify-center"
-              style={{ left: `${dividerPercent}%`, transform: "translateX(-50%)" }}
-            >
-              <div className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_8px_rgba(0,0,0,0.8)]" />
-              <div className="relative w-8 h-8 rounded-full bg-white text-black flex items-center justify-center shadow-2xl border-2 border-black/40 hover:scale-110 transition-transform">
-                <svg
-                  className="w-4 h-4 text-black"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
-                  />
-                </svg>
-              </div>
+            {/* Center Circular Drag Handle */}
+            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-white text-black shadow-2xl flex items-center justify-center font-mono font-bold text-xs pointer-events-auto cursor-ew-resize border border-black/20 hover:scale-110 active:scale-95 transition-transform">
+              ↔
             </div>
           </div>
-        ) : (
-          /* Normal Canvas View + Freely Draggable Text Selection & Quick Delete Badge */
-          <div
-            ref={canvasWrapperRef}
-            className="relative transition-transform duration-75 origin-center flex items-center justify-center border border-[#26272b]/60 max-w-full max-h-full"
-            style={{
-              aspectRatio: imageAspectRatio,
-              transform: `scale(${zoomScale})`,
-            }}
-          >
-            {/* CSS filter applied here for zero-cost live preview during slider drag.
-                The actual pixel-accurate render happens debounced in useCanvas. */}
-            <canvas
-              ref={canvasRef}
-              className="block w-full h-full object-contain"
-              style={{ filter: cssAdjustFilter || undefined }}
-            />
 
-            {/* Freely Draggable Interactive Text Overlay Triggers */}
-            {textLayers.map((layer) => {
+          {/* Pinned Corner Badges */}
+          <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#4b9fef] border border-[#4b9fef]/40 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
+            AFTER (EDITED)
+          </div>
+
+          <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#f0f0ec] border border-white/20 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
+            BEFORE (ORIGINAL)
+          </div>
+        </div>
+      )}
+
+      {/* Normal Canvas Mode with Interactive Overlays */}
+      {hasImage && !compareMode && (
+        <div
+          ref={canvasWrapperRef}
+          onClick={handleCanvasContainerClick}
+          className={`relative max-w-full max-h-full rounded shadow-2xl border border-[#26272b] overflow-hidden ${
+            isEyedropperActive ? "cursor-crosshair" : activeTool === "selective" ? "cursor-crosshair" : ""
+          }`}
+          style={{
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
+            transformOrigin: "center center",
+            aspectRatio: imageAspectRatio,
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            className="block w-full h-full object-contain pointer-events-none"
+          />
+
+          {/* Interactive Text Layers Overlay */}
+          {layers
+            .filter((l) => l.type === "text" && l.textData && l.visible)
+            .map((layer) => {
               const t = layer.textData!;
               const isSelected = selectedLayerId === layer.id;
 
               return (
                 <div
                   key={layer.id}
-                  onMouseDown={(e) => handleTextPointerDown(e, t)}
-                  onTouchStart={(e) => handleTextPointerDown(e, t)}
-                  className={`
-                    absolute font-mono font-bold cursor-move leading-none px-2 py-1 rounded transition-all select-none z-20 whitespace-nowrap
-                    ${
-                      isSelected
-                        ? "border-2 border-dashed border-[#4b9fef] bg-[#4b9fef]/10 shadow-lg"
-                        : "border border-transparent hover:border-white/40 hover:bg-white/5"
-                    }
-                  `}
+                  onMouseDown={(e) => handleTextPointerDown(e, layer.id, t.x, t.y)}
+                  onTouchStart={(e) => handleTextPointerDown(e, layer.id, t.x, t.y)}
                   style={{
+                    position: "absolute",
                     left: `${t.x * 100}%`,
                     top: `${t.y * 100}%`,
-                    fontSize: `${t.fontSize * 0.35}px`,
-                    color: "transparent",
+                    fontFamily: t.fontFamily || "ui-monospace, monospace",
+                    fontSize: `${t.fontSize}px`,
+                    color: t.color,
+                    lineHeight: 1,
                   }}
+                  className={`
+                    cursor-move select-none p-1 font-bold whitespace-nowrap will-change-transform
+                    ${
+                      isSelected
+                        ? "ring-2 ring-[#4b9fef] ring-offset-1 ring-offset-black/50 bg-[#4b9fef]/10 rounded shadow-lg"
+                        : "hover:ring-1 hover:ring-white/40 rounded"
+                    }
+                  `}
                 >
-                  <span className="invisible">{t.text}</span>
+                  {t.text}
 
-                  {/* Quick Delete Trash Badge on Direct Text Selection */}
+                  {/* Corner Resize Handle */}
                   {isSelected && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteLayer(layer.id);
-                      }}
-                      title="Delete Text Layer"
-                      className="absolute -top-7 left-1/2 -translate-x-1/2 bg-red-600 hover:bg-red-500 text-white p-1 rounded-full shadow-lg transition-transform hover:scale-110 cursor-pointer"
-                    >
-                      <svg
-                        className="w-3.5 h-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                        />
-                      </svg>
-                    </button>
-                  )}
-
-                  {/* Corner Anchor Handles for Real-time Font Size Resizing */}
-                  {isSelected && (
-                    <>
-                      <div
-                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
-                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
-                        title="Drag to resize text font size"
-                        className="absolute -top-2 -left-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
-                      />
-                      <div
-                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
-                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
-                        title="Drag to resize text font size"
-                        className="absolute -top-2 -right-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
-                      />
-                      <div
-                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
-                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
-                        title="Drag to resize text font size"
-                        className="absolute -bottom-2 -left-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
-                      />
-                      <div
-                        onMouseDown={(e) => handleAnchorResizeDown(e, t)}
-                        onTouchStart={(e) => handleAnchorResizeDown(e, t)}
-                        title="Drag to resize text font size"
-                        className="absolute -bottom-2 -right-2 w-3.5 h-3.5 bg-[#4b9fef] border-2 border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
-                      />
-                    </>
+                    <div
+                      onMouseDown={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
+                      onTouchStart={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
+                      className="absolute -right-2 -bottom-2 w-4 h-4 bg-[#4b9fef] rounded-full border-2 border-black cursor-se-resize shadow-md"
+                    />
                   )}
                 </div>
               );
             })}
 
-            {/* Crop Overlay when Crop tool is active */}
-            {activeTool === "crop" && (
+          {/* Interactive Snapseed Selective Control Points Overlay */}
+          {activeTool === "selective" &&
+            selectivePoints.map((pt, idx) => {
+              const isSelected = selectedSelectivePointId === pt.id;
+
+              return (
+                <div key={pt.id} className="pointer-events-auto">
+                  {/* Outer Radius Visualizer Circle */}
+                  {isSelected && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: `${pt.x * 100}%`,
+                        top: `${pt.y * 100}%`,
+                        width: `${pt.radius * 200}%`,
+                        height: `${pt.radius * 200}%`,
+                        transform: "translate(-50%, -50%)",
+                      }}
+                      className="rounded-full border border-dashed border-[#4b9fef]/80 bg-[#4b9fef]/5 pointer-events-none flex items-center justify-end pr-1 will-change-transform"
+                    >
+                      {/* Radius resize handle on edge of circle */}
+                      <div
+                        onMouseDown={(e) => handlePointRadiusHandleDown(e, pt)}
+                        onTouchStart={(e) => handlePointRadiusHandleDown(e, pt)}
+                        className="w-4 h-4 rounded-full bg-[#4b9fef] border-2 border-black cursor-ew-resize pointer-events-auto shadow-md"
+                        title="Drag to adjust affected radius"
+                      />
+                    </div>
+                  )}
+
+                  {/* Center Pin Button */}
+                  <div
+                    onMouseDown={(e) => handlePointPinDown(e, pt)}
+                    onTouchStart={(e) => handlePointPinDown(e, pt)}
+                    style={{
+                      position: "absolute",
+                      left: `${pt.x * 100}%`,
+                      top: `${pt.y * 100}%`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                    className={`
+                      w-7 h-7 rounded-full flex items-center justify-center font-mono font-bold text-xs cursor-move shadow-xl will-change-transform
+                      ${
+                        isSelected
+                          ? "bg-[#4b9fef] text-black ring-4 ring-[#4b9fef]/30 scale-110"
+                          : "bg-[#18191e] text-[#f0f0ec] border border-[#26272b] hover:border-[#4b9fef]"
+                      }
+                    `}
+                    title={`Control Point #${idx + 1}`}
+                  >
+                    {idx + 1}
+                  </div>
+                </div>
+              );
+            })}
+
+          {/* Interactive 8-Handle Crop Box Overlay */}
+          {activeTool === "crop" && (
+            <>
+              {/* Darkened Scrim overlay around crop box */}
               <div
-                className="absolute border-2 border-dashed border-white bg-white/10 pointer-events-none"
+                className="absolute inset-0 pointer-events-none bg-black/60"
                 style={{
-                  top: `${cropBox.y * 100}%`,
-                  left: `${cropBox.x * 100}%`,
-                  width: `${cropBox.width * 100}%`,
-                  height: `${cropBox.height * 100}%`,
+                  clipPath: `polygon(
+                    0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%,
+                    ${cropRect.x * 100}% ${cropRect.y * 100}%,
+                    ${cropRect.x * 100}% ${(cropRect.y + cropRect.height) * 100}%,
+                    ${(cropRect.x + cropRect.width) * 100}% ${(cropRect.y + cropRect.height) * 100}%,
+                    ${(cropRect.x + cropRect.width) * 100}% ${cropRect.y * 100}%,
+                    ${cropRect.x * 100}% ${cropRect.y * 100}%
+                  )`,
                 }}
+              />
+
+              {/* Crop Frame Box */}
+              <div
+                ref={cropBoxDOMRef}
+                onMouseDown={(e) => handleCropHandleDown(e, "move")}
+                onTouchStart={(e) => handleCropHandleDown(e, "move")}
+                style={{
+                  position: "absolute",
+                  left: `${cropRect.x * 100}%`,
+                  top: `${cropRect.y * 100}%`,
+                  width: `${cropRect.width * 100}%`,
+                  height: `${cropRect.height * 100}%`,
+                }}
+                className="border-2 border-[#4b9fef] shadow-2xl cursor-move will-change-transform pointer-events-auto"
               >
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-black" />
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-black" />
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-black" />
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-black" />
+                {/* 3x3 Rule-of-Thirds Grid */}
+                <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 opacity-60">
+                  <div className="border-r border-b border-white/40" />
+                  <div className="border-r border-b border-white/40" />
+                  <div className="border-b border-white/40" />
+                  <div className="border-r border-b border-white/40" />
+                  <div className="border-r border-b border-white/40" />
+                  <div className="border-b border-white/40" />
+                  <div className="border-r border-b border-white/40" />
+                  <div className="border-r border-b border-white/40" />
+                  <div />
+                </div>
+
+                {/* 4 Corner Handles */}
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "nw")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "nw")}
+                  className="absolute -top-2 -left-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nwse-resize shadow-md"
+                />
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "ne")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "ne")}
+                  className="absolute -top-2 -right-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nesw-resize shadow-md"
+                />
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "sw")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "sw")}
+                  className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nesw-resize shadow-md"
+                />
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "se")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "se")}
+                  className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nwse-resize shadow-md"
+                />
+
+                {/* 4 Edge Handles */}
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "n")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "n")}
+                  className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-6 h-3 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ns-resize shadow-md"
+                />
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "s")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "s")}
+                  className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-3 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ns-resize shadow-md"
+                />
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "w")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "w")}
+                  className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-6 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ew-resize shadow-md"
+                />
+                <div
+                  onMouseDown={(e) => handleCropHandleDown(e, "e")}
+                  onTouchStart={(e) => handleCropHandleDown(e, "e")}
+                  className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-6 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ew-resize shadow-md"
+                />
+
+                {/* Apply Crop Action Button */}
+                <div className="absolute bottom-2 right-2 flex items-center gap-1.5 pointer-events-auto">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      applyActiveCrop();
+                    }}
+                    className="px-2.5 py-1 bg-[#4b9fef] hover:bg-[#3b8fe0] text-black font-mono font-bold text-[10px] rounded shadow-lg flex items-center gap-1 cursor-pointer"
+                  >
+                    ✓ Apply Crop
+                  </button>
+                </div>
               </div>
-            )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Empty State Upload Screen */}
+      {!hasImage && (
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className="flex flex-col items-center justify-center gap-4 p-12 border-2 border-dashed border-[#26272b] rounded-xl hover:border-[#4b9fef]/50 hover:bg-[#131418]/50 transition-all duration-200 cursor-pointer text-center max-w-md font-mono"
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_TYPES.join(",")}
+            onChange={handleFileInputChange}
+            className="hidden"
+          />
+
+          <div className="w-16 h-16 rounded-full bg-[#18191e] border border-[#26272b] flex items-center justify-center text-[#4b9fef] shadow-inner">
+            <svg
+              className="w-8 h-8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+              />
+            </svg>
           </div>
-        )}
-      </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-bold text-[#f0f0ec]">
+              Drop your photo here
+            </span>
+            <span className="text-xs text-[#9a9d9a]">
+              or click to browse from your device
+            </span>
+          </div>
+
+          <span className="text-[10px] text-[#4b9fef] bg-[#4b9fef]/10 px-2.5 py-1 rounded-full border border-[#4b9fef]/20">
+            JPG, PNG, WEBP, AVIF supported
+          </span>
+        </div>
+      )}
     </main>
   );
 });
