@@ -1,16 +1,39 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ToolType, Adjustments, LayerItem, FilterSettings, ExportSettings } from "@/types/editor";
+import {
+  ToolType,
+  Adjustments,
+  LayerItem,
+  FilterSettings,
+  ExportSettings,
+  CurvesData,
+  SelectivePoint,
+} from "@/types/editor";
 import { TransformState } from "@/hooks/useCanvas";
 import { CATEGORIZED_FONTS } from "@/utils/fonts";
+import CurvesTool, { DEFAULT_CURVES } from "@/components/CurvesTool";
+import SelectiveTool from "@/components/SelectiveTool";
+import { PRESET_LOOKS, PremiumLookPreset } from "@/components/FilterPresetsStrip";
 
 interface RightPanelProps {
   activeTool: ToolType;
   adjustments: Adjustments;
   onChangeAdjustment: (key: keyof Adjustments, value: number) => void;
+  onResetAdjustments?: () => void;
+  curves: CurvesData;
+  onChangeCurves: (curves: CurvesData) => void;
+  selectivePoints: SelectivePoint[];
+  selectedSelectivePointId: string | null;
+  onSelectSelectivePoint: (id: string | null) => void;
+  onAddSelectivePoint: () => void;
+  onUpdateSelectivePoint: (id: string, updates: Partial<SelectivePoint>) => void;
+  onDeleteSelectivePoint: (id: string) => void;
+  isEyedropperActive: boolean;
+  onToggleEyedropper: () => void;
   filterSettings: FilterSettings;
   onChangeFilter: (filter: FilterSettings) => void;
+  onApplyLookPreset?: (look: PremiumLookPreset) => void;
   transformState: TransformState;
   onUpdateTransform: (transform: Partial<TransformState>) => void;
   layers: LayerItem[];
@@ -18,7 +41,11 @@ interface RightPanelProps {
   onSelectLayer: (id: string | null) => void;
   onToggleLayerVisibility: (id: string) => void;
   onDeleteLayer: (id: string) => void;
+  onDuplicateLayer?: (id: string) => void;
+  onRenameLayer?: (id: string, name: string) => void;
   onReorderLayers: (newLayers: LayerItem[]) => void;
+  onAddDoubleExposureLayer?: (file: File) => void;
+  onUpdateDoubleExposureLayer?: (id: string, opacity: number, blendMode: "normal" | "screen" | "multiply" | "overlay" | "soft-light") => void;
   onAddTextLayer: (
     text: string,
     fontSize: number,
@@ -33,14 +60,38 @@ interface RightPanelProps {
   exportSettings: ExportSettings;
   onChangeExportSettings: (settings: ExportSettings) => void;
   onTriggerExport: () => void;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
+
+const ASPECT_RATIO_PRESETS = [
+  { id: "free", name: "Free" },
+  { id: "original", name: "Original" },
+  { id: "1:1", name: "1:1 Square" },
+  { id: "4:3", name: "4:3 Classic" },
+  { id: "16:9", name: "16:9 Widescreen" },
+  { id: "3:2", name: "3:2 Photo" },
+  { id: "9:16", name: "9:16 Story" },
+];
 
 export default function RightPanel({
   activeTool,
   adjustments,
   onChangeAdjustment,
+  onResetAdjustments,
+  curves,
+  onChangeCurves,
+  selectivePoints,
+  selectedSelectivePointId,
+  onSelectSelectivePoint,
+  onAddSelectivePoint,
+  onUpdateSelectivePoint,
+  onDeleteSelectivePoint,
+  isEyedropperActive,
+  onToggleEyedropper,
   filterSettings,
   onChangeFilter,
+  onApplyLookPreset,
   transformState,
   onUpdateTransform,
   layers,
@@ -48,12 +99,18 @@ export default function RightPanel({
   onSelectLayer,
   onToggleLayerVisibility,
   onDeleteLayer,
+  onDuplicateLayer,
+  onRenameLayer,
   onReorderLayers,
+  onAddDoubleExposureLayer,
+  onUpdateDoubleExposureLayer,
   onAddTextLayer,
   onUpdateTextLayer,
   exportSettings,
   onChangeExportSettings,
   onTriggerExport,
+  collapsed = false,
+  onToggleCollapsed,
 }: RightPanelProps) {
   // Text tool local inputs
   const [textInput, setTextInput] = useState("StudioNorth");
@@ -61,11 +118,14 @@ export default function RightPanel({
   const [textColorInput, setTextColorInput] = useState("#4b9fef");
   const [selectedFont, setSelectedFont] = useState(CATEGORIZED_FONTS[0]);
 
-  // Selected text layer helper
+  // Selected layer helpers
   const selectedLayer = layers.find((l) => l.id === selectedLayerId);
   const isTextLayerSelected = selectedLayer && selectedLayer.type === "text";
+  const isDoubleExposureSelected = selectedLayer && selectedLayer.type === "double-exposure";
 
-  // Automatically sync local text inputs whenever selected text layer changes
+  const doubleExposureFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Automatically sync local text inputs
   useEffect(() => {
     if (selectedLayer && selectedLayer.type === "text" && selectedLayer.textData) {
       const t = selectedLayer.textData;
@@ -83,21 +143,20 @@ export default function RightPanel({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  // Debounce refs for adjustment sliders.
-  // Local values update instantly (for the slider position + CSS filter preview);
-  // the expensive pixel-pipeline call fires 200ms after the last movement stops.
-  const adjDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Layer context menu state
+  const [ctxMenu, setCtxMenu] = useState<{ layerId: string; x: number; y: number } | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
-  const handleAdjustmentChange = useCallback(
-    (key: keyof Adjustments, value: number) => {
-      // Immediately call to update React state (fast — just updates the number).
-      onChangeAdjustment(key, value);
-      // The actual canvas re-render inside onChangeAdjustment is cheap because
-      // CenterCanvas now shows a CSS filter live preview; the full pixel pipeline
-      // is debounced inside page.tsx via handleChangeAdjustment.
-    },
-    [onChangeAdjustment]
-  );
+  const closeCtxMenu = () => setCtxMenu(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handler = () => closeCtxMenu();
+    window.addEventListener("click", handler);
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtxMenu(); });
+    return () => window.removeEventListener("click", handler);
+  }, [ctxMenu]);
 
   const handleRotateCW = () => {
     onUpdateTransform({ rotation: (transformState.rotation + 90) % 360 });
@@ -115,599 +174,749 @@ export default function RightPanel({
     onUpdateTransform({ flipV: !transformState.flipV });
   };
 
-  const handleResetCrop = () => {
-    onUpdateTransform({ crop: null, rotation: 0, flipH: false, flipV: false });
+  const handleStraightenChange = (val: number) => {
+    onUpdateTransform({ straighten: val });
   };
 
-  const handleAddText = () => {
-    if (!textInput.trim()) return;
-    const cat = selectedFont.category.toLowerCase() as "standard" | "design" | "artsy" | "display";
-    onAddTextLayer(textInput, fontSizeInput, textColorInput, selectedFont.family, cat);
-  };
+  return (
+    <aside
+      className={`
+        border-l border-[#26272b] bg-[#131418] flex flex-col shrink-0 font-mono select-none relative
+        transition-[width,min-width,max-width] duration-200 ease-in-out
+        ${collapsed ? "w-0 min-w-0 max-w-0 overflow-hidden border-l-0" : "w-80 max-w-80"}
+      `}
+    >
+      {/* Collapse / Expand Chevron Tab Button */}
+      {onToggleCollapsed && (
+        <button
+          onClick={onToggleCollapsed}
+          title={collapsed ? "Expand adjustments panel" : "Collapse panel"}
+          className="absolute -left-3.5 top-1/2 -translate-y-1/2 z-50 w-3.5 h-12 bg-[#1c1d22] hover:bg-[#4b9fef] text-[#9a9d9a] hover:text-black border border-[#26272b] border-r-0 rounded-l flex items-center justify-center cursor-pointer transition-colors shadow-md"
+        >
+          <span className="text-[10px] font-bold">
+            {collapsed ? "‹" : "›"}
+          </span>
+        </button>
+      )}
 
-  const handleFontChange = (fontName: string) => {
-    const found = CATEGORIZED_FONTS.find((f) => f.name === fontName);
-    if (!found) return;
-    setSelectedFont(found);
-    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-      onUpdateTextLayer(selectedLayerId, { fontFamily: found.family });
-    }
-  };
+      {/* Main Panel Content Scroll Area */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-6">
 
-  const handleTextContentChange = (val: string) => {
-    setTextInput(val);
-    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-      onUpdateTextLayer(selectedLayerId, { text: val });
-    }
-  };
+        {/* 1. SELECTIVE (SNAPSEED LOCAL ADJUSTMENTS) */}
+        {activeTool === "selective" && (
+          <SelectiveTool
+            points={selectivePoints}
+            selectedPointId={selectedSelectivePointId}
+            onSelectPoint={onSelectSelectivePoint}
+            onAddPoint={onAddSelectivePoint}
+            onUpdatePoint={onUpdateSelectivePoint}
+            onDeletePoint={onDeleteSelectivePoint}
+          />
+        )}
 
-  const handleFontSizeChange = (val: number) => {
-    setFontSizeInput(val);
-    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-      onUpdateTextLayer(selectedLayerId, { fontSize: val });
-    }
-  };
-
-  const handleColorChange = (hex: string) => {
-    setTextColorInput(hex);
-    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-      onUpdateTextLayer(selectedLayerId, { color: hex });
-    }
-  };
-
-  const handleMoveLayer = (index: number, direction: "up" | "down") => {
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= layers.length) return;
-
-    const nextLayers = [...layers];
-    const [movedItem] = nextLayers.splice(index, 1);
-    nextLayers.splice(targetIndex, 0, movedItem);
-    onReorderLayers(nextLayers);
-  };
-
-  const handleDragStart = (index: number) => setDraggedIndex(index);
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    setDragOverIndex(index);
-  };
-
-  const handleDrop = (index: number) => {
-    if (draggedIndex === null || draggedIndex === index) {
-      setDraggedIndex(null);
-      setDragOverIndex(null);
-      return;
-    }
-    const nextLayers = [...layers];
-    const [movedItem] = nextLayers.splice(draggedIndex, 1);
-    nextLayers.splice(index, 0, movedItem);
-    onReorderLayers(nextLayers);
-    setDraggedIndex(null);
-    setDragOverIndex(null);
-  };
-
-  const colorPresets = [
-    { name: "Blue", hex: "#4b9fef" },
-    { name: "White", hex: "#ffffff" },
-    { name: "Yellow", hex: "#facc15" },
-    { name: "Red", hex: "#f87171" },
-    { name: "Green", hex: "#4ade80" },
-  ];
-
-  const renderContent = () => {
-    switch (activeTool) {
-      case "text":
-        return (
-          <div className="flex flex-col gap-4 font-mono text-xs">
-            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
-              CATEGORIZED TEXT TOOL
-            </div>
-
-            {/* Text Input */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-[#9a9d9a]">TEXT CONTENT</label>
-              <input
-                type="text"
-                value={textInput}
-                onChange={(e) => handleTextContentChange(e.target.value)}
-                placeholder="Enter text..."
-                className="w-full px-2.5 py-2 bg-[#0e0f12] border border-[#26272b] focus:border-[#4b9fef] text-[#f0f0ec] rounded outline-none text-xs"
-              />
-            </div>
-
-            {/* Categorized Font Selector */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-[#9a9d9a]">CATEGORIZED FONTS</label>
-              <select
-                value={selectedFont.name}
-                onChange={(e) => handleFontChange(e.target.value)}
-                className="w-full px-2.5 py-2 bg-[#0e0f12] border border-[#26272b] text-[#4b9fef] font-bold rounded outline-none text-xs cursor-pointer"
+        {/* 2. CURVES (RGB & CHANNEL TONE CURVES) */}
+        {activeTool === "curves" && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold text-[#f0f0ec]">RGB TONE CURVES</span>
+              <button
+                onClick={() => onChangeCurves(DEFAULT_CURVES)}
+                className="text-[10px] text-[#9a9d9a] hover:text-[#f0f0ec] cursor-pointer"
               >
-                <optgroup label="── Standard / Clean ──">
-                  {CATEGORIZED_FONTS.filter((f) => f.category === "Standard").map((f) => (
-                    <option key={f.name} value={f.name}>
-                      {f.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="── Design / Modern ──">
-                  {CATEGORIZED_FONTS.filter((f) => f.category === "Design").map((f) => (
-                    <option key={f.name} value={f.name}>
-                      {f.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="── Artsy / Creative ──">
-                  {CATEGORIZED_FONTS.filter((f) => f.category === "Artsy").map((f) => (
-                    <option key={f.name} value={f.name}>
-                      {f.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="── Display / Bold ──">
-                  {CATEGORIZED_FONTS.filter((f) => f.category === "Display").map((f) => (
-                    <option key={f.name} value={f.name}>
-                      {f.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
+                Reset Curves
+              </button>
             </div>
-
-            {/* Font Size Slider */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="text-[#9a9d9a]">FONT SIZE</span>
-                <span className="text-[#4b9fef] font-bold">{fontSizeInput}px</span>
-              </div>
-              <input
-                type="range"
-                min="16"
-                max="120"
-                value={fontSizeInput}
-                onChange={(e) => handleFontSizeChange(Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-
-            {/* Text Color Presets */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-[#9a9d9a]">TEXT COLOR</label>
-              <div className="flex items-center gap-2">
-                {colorPresets.map((c) => (
-                  <button
-                    key={c.hex}
-                    onClick={() => handleColorChange(c.hex)}
-                    title={c.name}
-                    className={`w-6 h-6 rounded-full border transition-transform ${
-                      textColorInput === c.hex
-                        ? "ring-2 ring-white scale-110 border-white"
-                        : "border-[#26272b] hover:scale-105"
-                    }`}
-                    style={{ backgroundColor: c.hex }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={handleAddText}
-              className="w-full py-2.5 bg-[#4b9fef] text-[#0e0f12] font-bold text-xs rounded hover:bg-[#3b8fd9] transition-colors cursor-pointer mt-2"
-            >
-              + Add Text Layer
-            </button>
+            <CurvesTool curves={curves} onChangeCurves={onChangeCurves} />
           </div>
-        );
+        )}
 
-      case "filter":
-        return (
-          <div className="flex flex-col gap-4 font-mono text-xs">
-            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
-              PRESET FILTERS (PHASE 4)
+        {/* 3. ADJUSTMENTS / TUNE IMAGE (WB, STRUCTURE, VIGNETTE, GRAIN) */}
+        {(activeTool === "adjust" || activeTool === "select") && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
+              <span className="text-xs font-bold text-[#f0f0ec]">TUNE IMAGE</span>
+              {onResetAdjustments && (
+                <button
+                  onClick={onResetAdjustments}
+                  className="text-[10px] text-[#4b9fef] hover:underline cursor-pointer"
+                >
+                  Reset All
+                </button>
+              )}
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#9a9d9a]">ACTIVE FILTER</span>
-                <span className="text-[#4b9fef] font-bold uppercase">{filterSettings.name}</span>
+            {/* Basic Tonal Sliders */}
+            <div className="space-y-4">
+              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+                Light & Contrast
+              </span>
+
+              {/* Exposure */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Exposure</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.exposure > 0 ? `+${adjustments.exposure}` : adjustments.exposure}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.exposure}
+                  onChange={(e) => onChangeAdjustment("exposure", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Brightness */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Brightness</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.brightness > 0 ? `+${adjustments.brightness}` : adjustments.brightness}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.brightness}
+                  onChange={(e) => onChangeAdjustment("brightness", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Contrast */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Contrast</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.contrast > 0 ? `+${adjustments.contrast}` : adjustments.contrast}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.contrast}
+                  onChange={(e) => onChangeAdjustment("contrast", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Saturation */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Saturation</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.saturation > 0 ? `+${adjustments.saturation}` : adjustments.saturation}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.saturation}
+                  onChange={(e) => onChangeAdjustment("saturation", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#9a9d9a]">INTENSITY</span>
-                <span className="text-[#4b9fef] font-bold">{filterSettings.intensity}%</span>
+            {/* White Balance Section with Eyedropper */}
+            <div className="space-y-4 pt-2 border-t border-[#26272b]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+                  White Balance
+                </span>
+                <button
+                  onClick={onToggleEyedropper}
+                  className={`
+                    px-2 py-0.5 text-[11px] rounded border flex items-center gap-1 transition-all cursor-pointer
+                    ${
+                      isEyedropperActive
+                        ? "bg-[#4b9fef] text-black border-[#4b9fef] font-bold"
+                        : "bg-[#18191e] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+                    }
+                  `}
+                  title="Eyedropper: Click on photo to sample neutral gray"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  </svg>
+                  {isEyedropperActive ? "Sampling..." : "Eyedropper"}
+                </button>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={filterSettings.intensity}
-                onChange={(e) =>
-                  onChangeFilter({ ...filterSettings, intensity: Number(e.target.value) })
-                }
-                className="w-full"
-              />
+
+              {/* Temperature */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Temperature (Cool / Warm)</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.temperature > 0 ? `+${adjustments.temperature}` : adjustments.temperature}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.temperature}
+                  onChange={(e) => onChangeAdjustment("temperature", Number(e.target.value))}
+                  className="w-full accent-amber-400 h-1.5 bg-gradient-to-r from-blue-600 via-[#26272b] to-amber-500 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Tint */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Tint (Green / Magenta)</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.tint > 0 ? `+${adjustments.tint}` : adjustments.tint}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.tint}
+                  onChange={(e) => onChangeAdjustment("tint", Number(e.target.value))}
+                  className="w-full accent-fuchsia-400 h-1.5 bg-gradient-to-r from-emerald-600 via-[#26272b] to-fuchsia-600 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
             </div>
-            <p className="text-[11px] text-[#9a9d9a]/70">
-              Select presets along the bottom strip to switch LUT color grading.
-            </p>
+
+            {/* Details & Effects (Structure, Vignette, Grain) */}
+            <div className="space-y-4 pt-2 border-t border-[#26272b]">
+              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+                Details & Texture
+              </span>
+
+              {/* Structure / Clarity */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Structure (Clarity)</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.structure > 0 ? `+${adjustments.structure}` : adjustments.structure}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.structure}
+                  onChange={(e) => onChangeAdjustment("structure", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Vignette */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Vignette</span>
+                  <span className="text-[#f0f0ec] font-bold">
+                    {adjustments.vignette > 0 ? `+${adjustments.vignette}` : adjustments.vignette}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={adjustments.vignette}
+                  onChange={(e) => onChangeAdjustment("vignette", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Film Grain */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#9a9d9a]">Film Grain</span>
+                  <span className="text-[#f0f0ec] font-bold">{adjustments.grain}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={adjustments.grain}
+                  onChange={(e) => onChangeAdjustment("grain", Number(e.target.value))}
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+            </div>
           </div>
-        );
+        )}
 
-      case "export":
-        return (
-          <div className="flex flex-col gap-4 font-mono text-xs">
-            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
-              EXPORT OPTIONS (PHASE 6)
-            </div>
+        {/* 4. CROP, ROTATE & STRAIGHTEN */}
+        {activeTool === "crop" && (
+          <div className="space-y-6">
+            <span className="text-xs font-bold text-[#f0f0ec]">CROP & STRAIGHTEN</span>
 
-            {/* Format Selection */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-[#9a9d9a]">FILE FORMAT</label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(["image/png", "image/jpeg", "image/webp"] as const).map((fmt) => {
-                  const label = fmt.split("/")[1].toUpperCase();
-                  const isSel = exportSettings.format === fmt;
+            {/* Aspect Ratio Presets */}
+            <div className="space-y-2">
+              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+                Aspect Ratio
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {ASPECT_RATIO_PRESETS.map((preset) => {
+                  const isSelected = (transformState.aspectRatioPreset || "free") === preset.id;
                   return (
                     <button
-                      key={fmt}
-                      onClick={() => onChangeExportSettings({ ...exportSettings, format: fmt })}
-                      className={`py-1.5 rounded border text-xs font-bold transition-colors ${
-                        isSel
-                          ? "bg-[#4b9fef] text-[#0e0f12] border-[#4b9fef]"
-                          : "border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
-                      }`}
+                      key={preset.id}
+                      onClick={() => onUpdateTransform({ aspectRatioPreset: preset.id as any })}
+                      className={`
+                        px-2.5 py-1.5 text-xs rounded border text-left cursor-pointer transition-colors
+                        ${
+                          isSelected
+                            ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef] font-bold"
+                            : "bg-[#18191e] border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                        }
+                      `}
                     >
-                      {label}
+                      {preset.name}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Quality Control (for JPEG & WebP) */}
+            {/* Straighten fine angle slider */}
+            <div className="space-y-2 pt-2 border-t border-[#26272b]">
+              <div className="flex justify-between text-xs">
+                <span className="text-[#9a9d9a]">Straighten Angle</span>
+                <span className="text-[#4b9fef] font-bold">
+                  {transformState.straighten ? `${transformState.straighten > 0 ? "+" : ""}${transformState.straighten}°` : "0°"}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-45"
+                max="45"
+                value={transformState.straighten || 0}
+                onChange={(e) => handleStraightenChange(Number(e.target.value))}
+                className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-[#9a9d9a]">
+                <span>-45°</span>
+                <button
+                  onClick={() => handleStraightenChange(0)}
+                  className="text-[#4b9fef] hover:underline cursor-pointer"
+                >
+                  Reset 0°
+                </button>
+                <span>+45°</span>
+              </div>
+            </div>
+
+            {/* 90° Rotate & Flip */}
+            <div className="space-y-2 pt-2 border-t border-[#26272b]">
+              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+                Transform
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleRotateCCW}
+                  className="p-2 bg-[#18191e] border border-[#26272b] hover:border-[#9a9d9a] rounded text-xs text-[#f0f0ec] flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  ↺ 90° CCW
+                </button>
+                <button
+                  onClick={handleRotateCW}
+                  className="p-2 bg-[#18191e] border border-[#26272b] hover:border-[#9a9d9a] rounded text-xs text-[#f0f0ec] flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  ↻ 90° CW
+                </button>
+                <button
+                  onClick={handleFlipH}
+                  className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                    transformState.flipH ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]" : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
+                  }`}
+                >
+                  ⇄ Flip H
+                </button>
+                <button
+                  onClick={handleFlipV}
+                  className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                    transformState.flipV ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]" : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
+                  }`}
+                >
+                  ⇅ Flip V
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 5. LOOKS & PRESETS */}
+        {activeTool === "filter" && (
+          <div className="space-y-4">
+            <span className="text-xs font-bold text-[#f0f0ec]">SNAPSEED LOOKS</span>
+            <p className="text-[11px] text-[#9a9d9a]">
+              One-tap non-destructive film and color grading profiles.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {PRESET_LOOKS.map((look) => (
+                <button
+                  key={look.id}
+                  onClick={() => onApplyLookPreset && onApplyLookPreset(look)}
+                  className="p-2.5 rounded bg-[#18191e] border border-[#26272b] hover:border-[#4b9fef] text-left transition-all cursor-pointer group flex flex-col gap-1"
+                >
+                  <div className={`w-full h-10 rounded bg-gradient-to-br ${look.previewBg} border border-white/10 flex items-end p-1`}>
+                    <span className="text-[9px] font-bold px-1 bg-black/60 rounded text-[#f0f0ec]">
+                      {look.tag}
+                    </span>
+                  </div>
+                  <span className="text-xs text-[#f0f0ec] group-hover:text-[#4b9fef] font-bold truncate">
+                    {look.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 6. TEXT TOOL */}
+        {activeTool === "text" && (
+          <div className="space-y-4">
+            <span className="text-xs font-bold text-[#f0f0ec]">
+              {isTextLayerSelected ? "EDIT TEXT LAYER" : "ADD TEXT LAYER"}
+            </span>
+
+            <div className="space-y-1.5">
+              <span className="text-xs text-[#9a9d9a]">Text Content</span>
+              <input
+                type="text"
+                value={textInput}
+                onChange={(e) => {
+                  setTextInput(e.target.value);
+                  if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
+                    onUpdateTextLayer(selectedLayerId, { text: e.target.value });
+                  }
+                }}
+                className="w-full px-3 py-2 bg-[#18191e] border border-[#26272b] rounded text-xs text-[#f0f0ec] focus:outline-none focus:border-[#4b9fef]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs text-[#9a9d9a]">Font Family</span>
+              <select
+                value={selectedFont.name}
+                onChange={(e) => {
+                  const font = CATEGORIZED_FONTS.find((f) => f.name === e.target.value);
+                  if (font) {
+                    setSelectedFont(font);
+                    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
+                      onUpdateTextLayer(selectedLayerId, { fontFamily: font.family });
+                    }
+                  }
+                }}
+                className="w-full px-3 py-2 bg-[#18191e] border border-[#26272b] rounded text-xs text-[#f0f0ec] focus:outline-none focus:border-[#4b9fef]"
+              >
+                {CATEGORIZED_FONTS.map((font) => (
+                  <option key={font.name} value={font.name}>
+                    {font.name} ({font.category})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <span className="text-xs text-[#9a9d9a]">Font Size</span>
+                <input
+                  type="number"
+                  min="12"
+                  max="240"
+                  value={fontSizeInput}
+                  onChange={(e) => {
+                    const size = Number(e.target.value);
+                    setFontSizeInput(size);
+                    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
+                      onUpdateTextLayer(selectedLayerId, { fontSize: size });
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-[#18191e] border border-[#26272b] rounded text-xs text-[#f0f0ec]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-xs text-[#9a9d9a]">Text Color</span>
+                <input
+                  type="color"
+                  value={textColorInput}
+                  onChange={(e) => {
+                    setTextColorInput(e.target.value);
+                    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
+                      onUpdateTextLayer(selectedLayerId, { color: e.target.value });
+                    }
+                  }}
+                  className="w-full h-9 p-1 bg-[#18191e] border border-[#26272b] rounded cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {!isTextLayerSelected && (
+              <button
+                onClick={() => {
+                  onAddTextLayer(
+                    textInput,
+                    fontSizeInput,
+                    textColorInput,
+                    selectedFont.family,
+                    selectedFont.category as any
+                  );
+                }}
+                className="w-full py-2.5 bg-[#4b9fef] text-black font-bold rounded text-xs hover:bg-[#3b8fe0] transition-colors cursor-pointer"
+              >
+                + Add Text to Canvas
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 7. LAYERS & DOUBLE EXPOSURE */}
+        {activeTool === "layers" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#f0f0ec]">LAYERS & STACK</span>
+              <button
+                onClick={() => doubleExposureFileInputRef.current?.click()}
+                className="px-2 py-1 text-[11px] rounded bg-[#18191e] border border-[#26272b] text-[#4b9fef] hover:border-[#4b9fef] cursor-pointer flex items-center gap-1"
+                title="Blend second image (Double Exposure)"
+              >
+                + Double Exposure
+              </button>
+            </div>
+
+            <input
+              ref={doubleExposureFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0] && onAddDoubleExposureLayer) {
+                  onAddDoubleExposureLayer(e.target.files[0]);
+                }
+              }}
+            />
+
+            {/* Double exposure controls when selected */}
+            {isDoubleExposureSelected && selectedLayer && selectedLayer.doubleExposureData && (
+              <div className="p-3 bg-[#18191e] border border-[#4b9fef]/40 rounded-lg space-y-3">
+                <span className="text-xs font-bold text-[#4b9fef]">Double Exposure Settings</span>
+                
+                {/* Opacity */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-[#9a9d9a]">
+                    <span>Blend Opacity</span>
+                    <span>{Math.round(selectedLayer.doubleExposureData.opacity * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(selectedLayer.doubleExposureData.opacity * 100)}
+                    onChange={(e) => {
+                      if (onUpdateDoubleExposureLayer) {
+                        onUpdateDoubleExposureLayer(
+                          selectedLayer.id,
+                          Number(e.target.value) / 100,
+                          selectedLayer.doubleExposureData!.blendMode
+                        );
+                      }
+                    }}
+                    className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                {/* Blend Mode */}
+                <div className="space-y-1">
+                  <span className="text-xs text-[#9a9d9a]">Blend Mode</span>
+                  <select
+                    value={selectedLayer.doubleExposureData.blendMode}
+                    onChange={(e) => {
+                      if (onUpdateDoubleExposureLayer) {
+                        onUpdateDoubleExposureLayer(
+                          selectedLayer.id,
+                          selectedLayer.doubleExposureData!.opacity,
+                          e.target.value as any
+                        );
+                      }
+                    }}
+                    className="w-full px-2 py-1.5 bg-[#131418] border border-[#26272b] rounded text-xs text-[#f0f0ec]"
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="screen">Screen (Lighten)</option>
+                    <option value="multiply">Multiply (Darken)</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="soft-light">Soft Light</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Layer Items List */}
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {layers.map((layer, idx) => {
+                const isSelected = layer.id === selectedLayerId;
+                return (
+                  <div
+                    key={layer.id}
+                    onClick={() => onSelectLayer(layer.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setCtxMenu({ layerId: layer.id, x: e.clientX, y: e.clientY });
+                    }}
+                    className={`
+                      flex items-center justify-between p-2 rounded border text-xs cursor-pointer transition-all
+                      ${
+                        isSelected
+                          ? "bg-[#4b9fef]/15 border-[#4b9fef] text-[#f0f0ec]"
+                          : "bg-[#18191e] border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                      }
+                    `}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="text-[10px] text-[#9a9d9a]">#{layers.length - idx}</span>
+                      <span className="font-bold truncate">{layer.name}</span>
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-[#26272b] text-[#9a9d9a] uppercase">
+                        {layer.type}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleLayerVisibility(layer.id);
+                        }}
+                        className="text-[#9a9d9a] hover:text-[#f0f0ec] p-1 cursor-pointer"
+                        title="Toggle visibility"
+                      >
+                        {layer.visible ? "👁" : "🚫"}
+                      </button>
+                      {layer.type !== "image" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteLayer(layer.id);
+                          }}
+                          className="text-red-400 hover:text-red-300 p-1 cursor-pointer"
+                          title="Delete layer"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 8. EXPORT PANEL */}
+        {activeTool === "export" && (
+          <div className="space-y-4">
+            <span className="text-xs font-bold text-[#f0f0ec]">EXPORT IMAGE</span>
+
+            <div className="space-y-1.5">
+              <span className="text-xs text-[#9a9d9a]">File Format</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(["image/jpeg", "image/png", "image/webp"] as const).map((fmt) => (
+                  <button
+                    key={fmt}
+                    onClick={() => onChangeExportSettings({ ...exportSettings, format: fmt })}
+                    className={`
+                      py-2 text-xs rounded border uppercase font-bold cursor-pointer transition-colors
+                      ${
+                        exportSettings.format === fmt
+                          ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]"
+                          : "bg-[#18191e] border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                      }
+                    `}
+                  >
+                    {fmt.split("/")[1]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {exportSettings.format !== "image/png" && (
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">QUALITY</span>
-                  <span className="text-[#4b9fef] font-bold">
+                  <span className="text-[#9a9d9a]">Quality</span>
+                  <span className="text-[#f0f0ec] font-bold">
                     {Math.round(exportSettings.quality * 100)}%
                   </span>
                 </div>
                 <input
                   type="range"
-                  min="0.1"
-                  max="1.0"
-                  step="0.05"
-                  value={exportSettings.quality}
+                  min="10"
+                  max="100"
+                  value={Math.round(exportSettings.quality * 100)}
                   onChange={(e) =>
                     onChangeExportSettings({
                       ...exportSettings,
-                      quality: Number(e.target.value),
+                      quality: Number(e.target.value) / 100,
                     })
                   }
-                  className="w-full"
+                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
                 />
               </div>
             )}
 
             <button
               onClick={onTriggerExport}
-              className="w-full py-2.5 bg-[#4b9fef] text-[#0e0f12] font-bold text-xs rounded hover:bg-[#3b8fd9] transition-colors cursor-pointer mt-2"
+              className="w-full py-3 bg-[#4b9fef] text-black font-bold rounded text-xs hover:bg-[#3b8fe0] transition-colors cursor-pointer mt-4 shadow-lg flex items-center justify-center gap-2"
             >
-              Download Export
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download Full-Res Photo
             </button>
           </div>
-        );
+        )}
+      </div>
 
-      case "adjust":
-        return (
-          <div className="flex flex-col gap-5 font-mono text-xs">
-            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
-              ADJUSTMENTS
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#9a9d9a]">BRIGHTNESS</span>
-                <span className="text-[#4b9fef] font-semibold">
-                  {adjustments.brightness > 0 ? `+${adjustments.brightness}` : adjustments.brightness}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="-100"
-                max="100"
-                value={adjustments.brightness}
-                onChange={(e) => handleAdjustmentChange("brightness", Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#9a9d9a]">CONTRAST</span>
-                <span className="text-[#4b9fef] font-semibold">
-                  {adjustments.contrast > 0 ? `+${adjustments.contrast}` : adjustments.contrast}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="-100"
-                max="100"
-                value={adjustments.contrast}
-                onChange={(e) => handleAdjustmentChange("contrast", Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#9a9d9a]">SATURATION</span>
-                <span className="text-[#4b9fef] font-semibold">
-                  {adjustments.saturation > 0 ? `+${adjustments.saturation}` : adjustments.saturation}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="-100"
-                max="100"
-                value={adjustments.saturation}
-                onChange={(e) => handleAdjustmentChange("saturation", Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#9a9d9a]">EXPOSURE</span>
-                <span className="text-[#4b9fef] font-semibold">
-                  {adjustments.exposure > 0 ? `+${adjustments.exposure}` : adjustments.exposure}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="-100"
-                max="100"
-                value={adjustments.exposure}
-                onChange={(e) => handleAdjustmentChange("exposure", Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-          </div>
-        );
-
-      case "crop":
-        return (
-          <div className="flex flex-col gap-4 font-mono text-xs">
-            <div className="text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2">
-              CROP & TRANSFORM
-            </div>
-            <div className="space-y-2 text-xs text-[#9a9d9a]">
-              <button
-                onClick={handleRotateCW}
-                className="w-full p-2.5 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer flex items-center justify-between"
-              >
-                <span>Rotate 90° CW</span>
-                <span className="text-[#4b9fef] font-bold">{transformState.rotation}°</span>
-              </button>
-
-              <button
-                onClick={handleRotateCCW}
-                className="w-full p-2.5 border border-[#26272b] hover:text-[#f0f0ec] hover:border-[#9a9d9a] rounded text-left transition-colors cursor-pointer"
-              >
-                Rotate 90° CCW
-              </button>
-
-              <button
-                onClick={handleFlipH}
-                className={`w-full p-2.5 border rounded text-left transition-colors cursor-pointer flex items-center justify-between ${
-                  transformState.flipH
-                    ? "border-[#4b9fef] text-[#4b9fef] bg-[#4b9fef]/10"
-                    : "border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
-                }`}
-              >
-                <span>Flip Horizontal</span>
-                {transformState.flipH && <span className="font-bold">ON</span>}
-              </button>
-
-              <button
-                onClick={handleFlipV}
-                className={`w-full p-2.5 border rounded text-left transition-colors cursor-pointer flex items-center justify-between ${
-                  transformState.flipV
-                    ? "border-[#4b9fef] text-[#4b9fef] bg-[#4b9fef]/10"
-                    : "border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
-                }`}
-              >
-                <span>Flip Vertical</span>
-                {transformState.flipV && <span className="font-bold">ON</span>}
-              </button>
-
-              <button
-                onClick={handleResetCrop}
-                className="w-full p-2.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded text-left transition-colors cursor-pointer mt-4"
-              >
-                Reset Transforms
-              </button>
-            </div>
-          </div>
-        );
-
-      case "layers":
-      case "select":
-      default:
-        return (
-          <div className="flex flex-col h-full font-mono text-xs">
-            <div className="flex items-center justify-between text-xs text-[#9a9d9a] uppercase tracking-wider font-semibold border-b border-[#26272b] pb-2 mb-2">
-              <span>LAYERS STACK ({layers.length})</span>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-1.5">
-              {layers.length === 0 ? (
-                <div className="text-xs text-[#9a9d9a]/50 py-4 text-center border border-dashed border-[#26272b] rounded">
-                  NO LAYERS
-                </div>
-              ) : (
-                layers.map((layer, index) => {
-                  const isSelected = selectedLayerId === layer.id;
-                  const isDragOver = dragOverIndex === index;
-                  return (
-                    <div
-                      key={layer.id}
-                      draggable
-                      onDragStart={() => handleDragStart(index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={() => handleDrop(index)}
-                      onClick={() => onSelectLayer(layer.id)}
-                      className={`
-                        flex items-center justify-between px-2.5 py-2 cursor-grab active:cursor-grabbing text-xs transition-all rounded border relative select-none
-                        ${
-                          isSelected
-                            ? "bg-[#4b9fef]/15 text-[#f0f0ec] border-[#4b9fef]"
-                            : "bg-[#0e0f12]/50 text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b]/40 border-[#26272b]"
-                        }
-                        ${isDragOver ? "border-t-2 border-t-white" : ""}
-                      `}
-                    >
-                      <div className="flex items-center gap-2 truncate min-w-0">
-                        <svg
-                          className="w-3.5 h-3.5 shrink-0 text-[#9a9d9a]/40"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M3.75 9h16.5m-16.5 6h16.5"
-                          />
-                        </svg>
-
-                        {layer.type === "text" ? (
-                          <span className="font-bold text-[#4b9fef] text-xs shrink-0">T</span>
-                        ) : (
-                          <svg
-                            className="w-3.5 h-3.5 shrink-0 text-[#4b9fef]"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-                            />
-                          </svg>
-                        )}
-                        <span className="truncate font-medium text-[11px]">{layer.name}</span>
-                      </div>
-
-                      {/* Controls: Reorder Up/Down + Visibility + Delete Layer */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveLayer(index, "up");
-                          }}
-                          disabled={index === 0}
-                          title="Move Layer Up"
-                          className="hover:text-white disabled:opacity-20 p-0.5 text-[10px]"
-                        >
-                          ▲
-                        </button>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveLayer(index, "down");
-                          }}
-                          disabled={index === layers.length - 1}
-                          title="Move Layer Down"
-                          className="hover:text-white disabled:opacity-20 p-0.5 text-[10px]"
-                        >
-                          ▼
-                        </button>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleLayerVisibility(layer.id);
-                          }}
-                          className="hover:text-white shrink-0 p-0.5"
-                          title="Toggle Visibility"
-                        >
-                          {layer.visible ? (
-                            <svg
-                              className="w-3.5 h-3.5 text-[#f0f0ec]"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-                              />
-                            </svg>
-                          ) : (
-                            <svg
-                              className="w-3.5 h-3.5 text-[#9a9d9a]/30"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
-                              />
-                            </svg>
-                          )}
-                        </button>
-
-                        {/* Delete Layer Trash Icon */}
-                        {layer.type !== "image" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteLayer(layer.id);
-                            }}
-                            title="Delete Layer"
-                            className="hover:text-red-400 text-red-400/60 p-0.5 ml-1 transition-colors"
-                          >
-                            <svg
-                              className="w-3.5 h-3.5"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.75"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                              />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        );
-    }
-  };
-
-  return (
-    <aside className="w-[210px] border-l border-[#26272b] bg-[#131418] p-4 flex flex-col shrink-0 font-mono select-none">
-      {renderContent()}
+      {/* Layer Context Menu */}
+      {ctxMenu && (
+        <div
+          style={{ top: `${ctxMenu.y}px`, left: `${ctxMenu.x}px` }}
+          className="fixed z-50 bg-[#18191e] border border-[#26272b] rounded-lg shadow-2xl py-1 w-44 font-mono text-xs select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {onDuplicateLayer && (
+            <button
+              onClick={() => {
+                onDuplicateLayer(ctxMenu.layerId);
+                closeCtxMenu();
+              }}
+              className="w-full px-3 py-1.5 text-left text-[#f0f0ec] hover:bg-[#4b9fef]/15 hover:text-[#4b9fef] flex items-center gap-2 cursor-pointer"
+            >
+              Duplicate Layer
+            </button>
+          )}
+          <button
+            onClick={() => {
+              onToggleLayerVisibility(ctxMenu.layerId);
+              closeCtxMenu();
+            }}
+            className="w-full px-3 py-1.5 text-left text-[#f0f0ec] hover:bg-[#4b9fef]/15 hover:text-[#4b9fef] flex items-center gap-2 cursor-pointer"
+          >
+            Toggle Visibility
+          </button>
+          <button
+            onClick={() => {
+              onDeleteLayer(ctxMenu.layerId);
+              closeCtxMenu();
+            }}
+            className="w-full px-3 py-1.5 text-left text-red-400 hover:bg-red-500/15 flex items-center gap-2 cursor-pointer border-t border-[#26272b] mt-1 pt-1"
+          >
+            Delete Layer
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

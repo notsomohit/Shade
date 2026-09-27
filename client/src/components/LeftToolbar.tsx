@@ -22,7 +22,7 @@ const LeftToolbar = memo(function LeftToolbar({
   const tools: ToolItem[] = [
     {
       id: "select",
-      name: "Select",
+      name: "Select / Move",
       shortcut: "V",
       icon: (
         <svg
@@ -41,9 +41,27 @@ const LeftToolbar = memo(function LeftToolbar({
       ),
     },
     {
-      id: "crop",
-      name: "Crop",
-      shortcut: "C",
+      id: "selective",
+      name: "Selective (Snapseed)",
+      shortcut: "S",
+      icon: (
+        <svg
+          className="w-4.5 h-4.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <circle cx="12" cy="12" r="8" strokeDasharray="3 3" />
+          <circle cx="12" cy="12" r="3" fill="currentColor" />
+          <path strokeLinecap="round" d="M12 2v2m0 16v2M2 12h2m16 0h2" />
+        </svg>
+      ),
+    },
+    {
+      id: "curves",
+      name: "Tone Curves",
+      shortcut: "K",
       icon: (
         <svg
           className="w-4.5 h-4.5"
@@ -55,14 +73,20 @@ const LeftToolbar = memo(function LeftToolbar({
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
-            d="M7.5 3.75v12a2.25 2.25 0 002.25 2.25h12M16.5 20.25v-12A2.25 2.25 0 0014.25 6h-12"
+            d="M3 20c4-1 6-12 10-12s5 11 8 12"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M3 3v18h18"
+            strokeWidth="1"
           />
         </svg>
       ),
     },
     {
       id: "adjust",
-      name: "Adjustments",
+      name: "Tune Image (WB/Str)",
       shortcut: "A",
       icon: (
         <svg
@@ -81,8 +105,28 @@ const LeftToolbar = memo(function LeftToolbar({
       ),
     },
     {
+      id: "crop",
+      name: "Crop & Straighten",
+      shortcut: "C",
+      icon: (
+        <svg
+          className="w-4.5 h-4.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M7.5 3.75v12a2.25 2.25 0 002.25 2.25h12M16.5 20.25v-12A2.25 2.25 0 0014.25 6h-12"
+          />
+        </svg>
+      ),
+    },
+    {
       id: "filter",
-      name: "Filters",
+      name: "Looks & Filters",
       shortcut: "F",
       icon: (
         <svg
@@ -102,7 +146,7 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "text",
-      name: "Text",
+      name: "Text Overlays",
       shortcut: "T",
       icon: (
         <svg
@@ -122,7 +166,7 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "layers",
-      name: "Layers",
+      name: "Layers & Exposure",
       shortcut: "L",
       icon: (
         <svg
@@ -142,7 +186,7 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "export",
-      name: "Export Settings",
+      name: "Export",
       shortcut: "E",
       icon: (
         <svg
@@ -163,8 +207,8 @@ const LeftToolbar = memo(function LeftToolbar({
   ];
 
   return (
-    <aside className="w-[52px] border-r border-[#26272b] bg-[#131418] flex flex-col items-center justify-between py-5 shrink-0 font-mono select-none">
-      <div className="flex flex-col items-center gap-5 w-full">
+    <aside className="w-[52px] border-r border-[#26272b] bg-[#131418] flex flex-col items-center justify-between py-4 shrink-0 font-mono select-none">
+      <div className="flex flex-col items-center gap-3.5 w-full">
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
           return (
