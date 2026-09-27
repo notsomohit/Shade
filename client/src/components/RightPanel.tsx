@@ -44,6 +44,8 @@ interface RightPanelProps {
   onDuplicateLayer?: (id: string) => void;
   onRenameLayer?: (id: string, name: string) => void;
   onReorderLayers: (newLayers: LayerItem[]) => void;
+  onResetCrop?: () => void;
+  onApplyCrop?: () => void;
   onAddDoubleExposureLayer?: (file: File) => void;
   onUpdateDoubleExposureLayer?: (id: string, opacity: number, blendMode: "normal" | "screen" | "multiply" | "overlay" | "soft-light") => void;
   onAddTextLayer: (
@@ -102,6 +104,8 @@ export default function RightPanel({
   onDuplicateLayer,
   onRenameLayer,
   onReorderLayers,
+  onResetCrop,
+  onApplyCrop,
   onAddDoubleExposureLayer,
   onUpdateDoubleExposureLayer,
   onAddTextLayer,
@@ -183,7 +187,7 @@ export default function RightPanel({
       className={`
         border-l border-[#26272b] bg-[#131418] flex flex-col shrink-0 font-mono select-none relative
         transition-[width,min-width,max-width] duration-200 ease-in-out
-        ${collapsed ? "w-0 min-w-0 max-w-0 overflow-hidden border-l-0" : "w-80 max-w-80"}
+        ${collapsed ? "w-0 min-w-0 max-w-0 border-l-0" : "w-80 max-w-80"}
       `}
     >
       {/* Collapse / Expand Chevron Tab Button */}
@@ -200,7 +204,7 @@ export default function RightPanel({
       )}
 
       {/* Main Panel Content Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-6">
+      <div className={`flex-1 overflow-y-auto p-5 space-y-6 ${collapsed ? "hidden" : "block"}`}>
 
         {/* 1. SELECTIVE (SNAPSEED LOCAL ADJUSTMENTS) */}
         {activeTool === "selective" && (
@@ -450,7 +454,30 @@ export default function RightPanel({
         {/* 4. CROP, ROTATE & STRAIGHTEN */}
         {activeTool === "crop" && (
           <div className="space-y-6">
-            <span className="text-xs font-bold text-[#f0f0ec]">CROP & STRAIGHTEN</span>
+            <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
+              <span className="text-xs font-bold text-[#f0f0ec]">CROP & STRAIGHTEN</span>
+              {onResetCrop && (
+                <button
+                  onClick={onResetCrop}
+                  className="text-[10px] text-[#4b9fef] hover:underline cursor-pointer"
+                >
+                  Reset to Full
+                </button>
+              )}
+            </div>
+
+            {/* Quick Action: Apply Crop Button */}
+            {onApplyCrop && (
+              <button
+                onClick={onApplyCrop}
+                className="w-full py-2 bg-[#4b9fef] hover:bg-[#3b8fe0] text-black font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+                Apply Crop Selection
+              </button>
+            )}
 
             {/* Aspect Ratio Presets */}
             <div className="space-y-2">
