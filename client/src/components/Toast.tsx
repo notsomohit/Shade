@@ -50,22 +50,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* Toast Renderer */}
       <div
         aria-live="polite"
-        className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 items-center pointer-events-none"
+        className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 items-center pointer-events-none"
       >
         {toasts.map((t) => (
           <div
             key={t.id}
             onClick={() => dismiss(t.id)}
             className={`
-              pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs font-medium
-              shadow-2xl select-none cursor-pointer
-              animate-[slideUp_0.15s_ease-out]
+              pointer-events-auto flex items-center gap-2 px-3.5 py-2 rounded border text-xs font-medium
+              shadow-2xl select-none cursor-pointer transition-transform
               ${
                 t.type === "error"
                   ? "bg-[#181113] border-red-500/30 text-red-300"
                   : t.type === "success"
                   ? "bg-[#111813] border-emerald-500/30 text-emerald-300"
-                  : "bg-[#16161a] border-[#222227] text-[#ededed]"
+                  : "bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text)]"
               }
             `}
           >

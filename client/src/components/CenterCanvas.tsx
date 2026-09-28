@@ -632,15 +632,15 @@ const CenterCanvas = memo(function CenterCanvas({
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className="flex-1 h-full bg-[#09090b] flex items-center justify-center p-6 relative overflow-hidden select-none"
+      className="flex-1 h-full bg-[var(--bg-app)] flex items-center justify-center p-3 sm:p-6 relative overflow-hidden select-none touch-none overscroll-none"
     >
       {/* Subtle Technical Canvas Grid Pattern */}
       <div
-        className="absolute inset-0 opacity-[0.02] pointer-events-none"
+        className="absolute inset-0 opacity-[0.05] pointer-events-none"
         style={{
           backgroundImage:
             "linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
+          backgroundSize: "40px 40px",
         }}
       />
 
@@ -974,7 +974,11 @@ const CenterCanvas = memo(function CenterCanvas({
       {!hasImage && (
         <div
           onClick={() => fileInputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-3.5 p-10 border border-dashed border-[#2d2d34] hover:border-[#3b82f6]/50 bg-[#121215]/60 hover:bg-[#121215] rounded-xl transition-all duration-150 cursor-pointer text-center max-w-sm"
+          style={{
+            border: "1.5px dashed rgba(255, 255, 255, 0.85)",
+            borderRadius: "6px",
+          }}
+          className="flex flex-col items-center justify-center gap-4 p-6 sm:p-8 bg-[var(--bg-panel)]/40 hover:bg-[var(--bg-panel)]/80 transition-all duration-150 cursor-pointer text-center w-full max-w-[450px] min-h-[220px] sm:min-h-[280px] max-h-[320px] mx-4 shadow-none"
         >
           <input
             ref={fileInputRef}
@@ -984,12 +988,13 @@ const CenterCanvas = memo(function CenterCanvas({
             className="hidden"
           />
 
-          <div className="w-12 h-12 rounded-full bg-[#18181c] border border-[#2d2d34] flex items-center justify-center text-[#84848d] group-hover:text-[#ededed]">
+          {/* ~80px circular dark-navy icon container with blue upload arrow */}
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#101726] border border-[#1e2d4a] flex items-center justify-center text-[var(--accent)] shrink-0 shadow-inner">
             <svg
-              className="w-6 h-6"
+              className="w-7 h-7 sm:w-8 sm:h-8"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="1.75"
               viewBox="0 0 24 24"
             >
               <path
@@ -1000,18 +1005,19 @@ const CenterCanvas = memo(function CenterCanvas({
             </svg>
           </div>
 
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-semibold text-[#ededed]">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm sm:text-base font-bold text-[var(--text)] tracking-tight">
               Drop your photo here
             </span>
-            <span className="text-xs text-[#84848d]">
+            <span className="text-xs text-[var(--text-muted)]">
               or click to browse from your device
             </span>
           </div>
 
-          <span className="text-[10px] text-[#5c5c66] pt-1">
-            JPEG · PNG · WEBP · AVIF
-          </span>
+          {/* Supported formats monospace pill */}
+          <div className="mt-1 px-3 py-1 rounded-full bg-[var(--accent-soft)] border border-[var(--accent)]/30 text-[10px] font-mono text-[var(--accent)] tracking-wider">
+            JPG, PNG, WEBP, AVIF supported
+          </div>
         </div>
       )}
     </main>
