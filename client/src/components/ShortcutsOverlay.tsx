@@ -16,6 +16,7 @@ const SHORTCUTS = [
   { key: "C", desc: "Crop & Straighten" },
   { key: "T", desc: "Text Overlay" },
   { key: "L", desc: "Layers & Double Exposure" },
+  { key: "B", desc: "Background Eraser" },
   { key: "E", desc: "Export Settings" },
   { key: "Ctrl + Z", desc: "Undo last edit" },
   { key: "Ctrl + Shift + Z", desc: "Redo last edit" },

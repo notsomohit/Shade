@@ -7,6 +7,7 @@ export type ToolType =
   | "filter"
   | "text"
   | "layers"
+  | "eraser"
   | "export";
 
 export type GridMode = "none" | "grid" | "thirds";
@@ -149,4 +150,16 @@ export interface ExportSettings {
   format: "image/png" | "image/jpeg" | "image/webp";
   quality: number; // 0.1 to 1.0
 }
+
+export interface BackgroundEraserSettings {
+  enabled: boolean; // true once the background has been keyed out
+  color: string; // hex background color to key against, e.g. "#ffffff"
+  tolerance: number; // 0 to 100, how closely a pixel must match to be removed
+}
+
+export const DEFAULT_BACKGROUND_ERASER: BackgroundEraserSettings = {
+  enabled: false,
+  color: "#ffffff",
+  tolerance: 30,
+};
 
