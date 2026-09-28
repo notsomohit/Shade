@@ -27,22 +27,24 @@ const BottomBar = memo(function BottomBar({
   const filename = imageData ? imageData.name : "untitled.png";
 
   return (
-    <footer className="h-10 px-4 flex items-center justify-between border-t border-[#26272b] bg-[#131418] text-xs font-mono text-[#9a9d9a] shrink-0 select-none">
+    <footer className="h-9 px-3.5 flex items-center justify-between border-t border-[#222227] bg-[#121215] text-xs text-[#84848d] shrink-0 select-none">
       {/* Left: Zoom controls */}
-      <div className="flex items-center gap-3">
-        <span className="text-[#9a9d9a] font-mono text-xs font-semibold">ZOOM:</span>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2.5">
+        <span className="text-[10px] uppercase font-semibold tracking-wider text-[#5c5c66]">
+          Zoom
+        </span>
+        <div className="flex items-center gap-1">
           <button
             onClick={onZoomOut}
             disabled={zoom <= 25}
-            className="w-6 h-6 flex items-center justify-center border border-[#26272b] rounded hover:text-[#f0f0ec] hover:bg-[#26272b]/60 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors text-sm font-bold"
+            className="w-5 h-5 flex items-center justify-center border border-[#222227] bg-[#16161a] rounded hover:text-[#ededed] hover:border-[#2d2d34] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors text-xs font-bold"
             title="Zoom Out (-)"
           >
             −
           </button>
           <button
             onClick={onResetZoom}
-            className="hover:text-[#4b9fef] cursor-pointer min-w-[44px] text-center font-bold text-xs"
+            className="hover:text-[#3b82f6] cursor-pointer min-w-[38px] text-center font-mono font-medium text-xs text-[#ededed] transition-colors"
             title="Reset to 100% (1)"
           >
             {zoom}%
@@ -50,7 +52,7 @@ const BottomBar = memo(function BottomBar({
           <button
             onClick={onZoomIn}
             disabled={zoom >= 400}
-            className="w-6 h-6 flex items-center justify-center border border-[#26272b] rounded hover:text-[#f0f0ec] hover:bg-[#26272b]/60 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors text-sm font-bold"
+            className="w-5 h-5 flex items-center justify-center border border-[#222227] bg-[#16161a] rounded hover:text-[#ededed] hover:border-[#2d2d34] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition-colors text-xs font-bold"
             title="Zoom In (+)"
           >
             +
@@ -58,17 +60,17 @@ const BottomBar = memo(function BottomBar({
         </div>
 
         {/* Quick Zoom Fit and 1:1 shortcuts */}
-        <div className="flex items-center gap-1 pl-2 border-l border-[#26272b]">
+        <div className="flex items-center gap-1 pl-2 border-l border-[#222227]">
           <button
             onClick={onZoomFit}
-            className="px-1.5 py-0.5 text-[10px] rounded bg-[#18191e] border border-[#26272b] hover:border-[#4b9fef] hover:text-[#f0f0ec] cursor-pointer transition-colors"
+            className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-[#16161a] border border-[#222227] hover:border-[#3b82f6] hover:text-[#ededed] cursor-pointer transition-colors"
             title="Fit to Screen (0)"
           >
             FIT
           </button>
           <button
             onClick={onResetZoom}
-            className="px-1.5 py-0.5 text-[10px] rounded bg-[#18191e] border border-[#26272b] hover:border-[#4b9fef] hover:text-[#f0f0ec] cursor-pointer transition-colors"
+            className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-[#16161a] border border-[#222227] hover:border-[#3b82f6] hover:text-[#ededed] cursor-pointer transition-colors"
             title="Actual Pixels 100% (1)"
           >
             1:1
@@ -76,30 +78,30 @@ const BottomBar = memo(function BottomBar({
         </div>
       </div>
 
-      {/* Center: Processing status spinner / notification */}
+      {/* Center: Processing status spinner */}
       {isProcessing && (
-        <div className="flex items-center gap-2 text-[11px] text-[#4b9fef] animate-pulse">
-          <div className="w-2.5 h-2.5 rounded-full border-2 border-[#4b9fef] border-t-transparent animate-spin" />
-          <span>Processing pipeline...</span>
+        <div className="flex items-center gap-1.5 text-[11px] text-[#3b82f6] animate-pulse">
+          <div className="w-2.5 h-2.5 rounded-full border-2 border-[#3b82f6] border-t-transparent animate-spin" />
+          <span>Processing...</span>
         </div>
       )}
 
       {/* Right: Metadata info */}
-      <div className="flex items-center gap-4 text-[#9a9d9a]">
+      <div className="flex items-center gap-3 text-[11px] text-[#84848d]">
         {imageData ? (
           <>
-            <span className="truncate max-w-[180px]" title={filename}>
+            <span className="truncate max-w-[180px] text-[#ededed]" title={filename}>
               {filename}
             </span>
-            <span className="text-[#26272b]">|</span>
-            <span>
+            <span className="text-[#222227]">·</span>
+            <span className="font-mono">
               {imageData.width} × {imageData.height} px
             </span>
-            <span className="text-[#26272b]">|</span>
-            <span>{imageData.aspectRatio.toFixed(2)}:1</span>
+            <span className="text-[#222227]">·</span>
+            <span className="font-mono">{imageData.aspectRatio.toFixed(2)}:1</span>
           </>
         ) : (
-          <span>No image loaded</span>
+          <span className="text-[#5c5c66]">No image loaded</span>
         )}
       </div>
     </footer>

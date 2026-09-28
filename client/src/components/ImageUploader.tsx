@@ -78,10 +78,7 @@ export default function ImageUploader({ onImageSelect }: ImageUploaderProps) {
 
   return (
     <div
-      className={`
-        flex flex-1 items-center justify-center p-4 sm:p-8
-        transition-colors duration-200
-      `}
+      className="flex flex-1 items-center justify-center p-4 sm:p-8 select-none"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -89,20 +86,20 @@ export default function ImageUploader({ onImageSelect }: ImageUploaderProps) {
     >
       <div
         className={`
-          w-full max-w-lg rounded-2xl border-2 border-dashed p-8 sm:p-12
-          text-center transition-all duration-200 cursor-pointer
+          w-full max-w-sm rounded-xl border border-dashed p-8 sm:p-10
+          text-center transition-all duration-150 cursor-pointer
           ${
             isDragging
-              ? "border-indigo-400 bg-indigo-500/10 scale-[1.02]"
-              : "border-white/10 hover:border-white/20 bg-white/[0.02] hover:bg-white/[0.04]"
+              ? "border-[#3b82f6] bg-[#3b82f6]/10 scale-[1.01]"
+              : "border-[#2d2d34] hover:border-[#3b82f6]/50 bg-[#121215]/60 hover:bg-[#121215]"
           }
         `}
         onClick={() => fileInputRef.current?.click()}
       >
         {/* Upload icon */}
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-500/10">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#18181c] border border-[#2d2d34] text-[#84848d]">
           <svg
-            className="h-8 w-8 text-indigo-400"
+            className="h-6 w-6"
             fill="none"
             viewBox="0 0 24 24"
             strokeWidth={1.5}
@@ -116,20 +113,20 @@ export default function ImageUploader({ onImageSelect }: ImageUploaderProps) {
           </svg>
         </div>
 
-        <h2 className="text-xl sm:text-2xl font-semibold mb-2">
-          {isDragging ? "Drop your image here" : "Upload an image"}
+        <h2 className="text-sm font-semibold text-[#ededed] mb-1">
+          {isDragging ? "Drop your photo here" : "Drop your photo here"}
         </h2>
 
-        <p className="text-sm text-foreground/50 mb-6">
-          Drag & drop or click to browse
+        <p className="text-xs text-[#84848d] mb-4">
+          or click to browse from your device
         </p>
 
-        <p className="text-xs text-foreground/30">
-          JPEG, PNG, WebP, AVIF — up to 50MB
-        </p>
+        <span className="text-[10px] text-[#5c5c66]">
+          JPEG · PNG · WEBP · AVIF
+        </span>
 
         {error && (
-          <p className="mt-4 text-sm text-red-400 font-medium">{error}</p>
+          <p className="mt-3 text-xs text-red-400 font-medium">{error}</p>
         )}
 
         <input

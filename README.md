@@ -1,6 +1,6 @@
-# StudioNorth
+# SHADE
 
-A browser-based photo editing app with non-destructive adjustments, LUT filters, edit history undo/redo, export controls, dynamic aspect ratio, freely draggable & resizable text overlays with categorized fonts, high-visibility grid guides, and layer stacking reordering.
+A clean, professional dark photo editor with non-destructive adjustments, tone curves, selective control points, presets, edit history undo/redo, export controls, dynamic aspect ratio, freely draggable & resizable text overlays with categorized fonts, grid guides, and layer stacking reordering.
 
 ## Tech Stack
 

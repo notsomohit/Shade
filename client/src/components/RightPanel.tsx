@@ -124,9 +124,9 @@ export default function RightPanel({
   onToggleCollapsed,
 }: RightPanelProps) {
   // Text tool local inputs
-  const [textInput, setTextInput] = useState("StudioNorth");
+  const [textInput, setTextInput] = useState("SHADE");
   const [fontSizeInput, setFontSizeInput] = useState(48);
-  const [textColorInput, setTextColorInput] = useState("#4b9fef");
+  const [textColorInput, setTextColorInput] = useState("#3b82f6");
   const [selectedFont, setSelectedFont] = useState(CATEGORIZED_FONTS[0]);
 
   // Preset browser state
@@ -216,25 +216,25 @@ export default function RightPanel({
   return (
     <aside
       className={`
-        border-l border-[#26272b] bg-[#131418] flex flex-col shrink-0 font-mono select-none relative
-        transition-[width,min-width,max-width] duration-200 ease-in-out
-        ${collapsed ? "w-0 min-w-0 max-w-0 border-l-0" : "w-80 max-w-80"}
+        border-l border-[#222227] bg-[#121215] flex flex-col shrink-0 select-none relative
+        transition-[width,min-width,max-width] duration-180 ease-out
+        ${collapsed ? "w-0 min-w-0 max-w-0 border-l-0" : "w-76 max-w-76"}
       `}
     >
       {/* Collapse / Expand Chevron Tab Button */}
       {onToggleCollapsed && (
         <button
           onClick={onToggleCollapsed}
-          title={collapsed ? "Expand adjustments panel" : "Collapse panel"}
-          className="absolute -left-3.5 top-1/2 -translate-y-1/2 z-50 w-3.5 h-12 bg-[#1c1d22] hover:bg-[#4b9fef] text-[#9a9d9a] hover:text-black border border-[#26272b] border-r-0 rounded-l flex items-center justify-center cursor-pointer transition-colors shadow-md"
+          title={collapsed ? "Expand panel" : "Collapse panel"}
+          className="absolute -left-3 top-1/2 -translate-y-1/2 z-50 w-3 h-10 bg-[#16161a] hover:bg-[#2563eb] text-[#84848d] hover:text-white border border-[#222227] border-r-0 rounded-l flex items-center justify-center cursor-pointer transition-colors shadow-md"
         >
-          <span className="text-[10px] font-bold">{collapsed ? "‹" : "›"}</span>
+          <span className="text-[9px] font-bold">{collapsed ? "‹" : "›"}</span>
         </button>
       )}
 
       {/* Main Panel Content Scroll Area */}
-      <div className={`flex-1 overflow-y-auto p-5 space-y-6 ${collapsed ? "hidden" : "block"}`}>
-        {/* 1. SELECTIVE (SNAPSEED LOCAL ADJUSTMENTS) */}
+      <div className={`flex-1 overflow-y-auto p-4 space-y-5 ${collapsed ? "hidden" : "block"}`}>
+        {/* 1. SELECTIVE CONTROL POINTS */}
         {activeTool === "selective" && (
           <SelectiveTool
             points={selectivePoints}
@@ -246,53 +246,50 @@ export default function RightPanel({
           />
         )}
 
-        {/* 2. CURVES (RGB & CHANNEL TONE CURVES) */}
+        {/* 2. TONE CURVES */}
         {activeTool === "curves" && (
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-[#f0f0ec]">RGB TONE CURVES</span>
+            <div className="flex items-center justify-between mb-3 border-b border-[#222227] pb-2">
+              <span className="text-xs font-semibold text-[#ededed]">TONE CURVES</span>
               <button
                 onClick={() => onChangeCurves(DEFAULT_CURVES)}
-                className="text-[10px] text-[#9a9d9a] hover:text-[#f0f0ec] cursor-pointer"
+                className="text-[11px] text-[#84848d] hover:text-[#ededed] cursor-pointer transition-colors"
               >
-                Reset Curves
+                Reset
               </button>
             </div>
             <CurvesTool curves={curves} onChangeCurves={onChangeCurves} />
           </div>
         )}
 
-        {/* 3. ADJUSTMENTS / TUNE IMAGE (PROFESSIONAL 16-SLIDER ENGINE) */}
+        {/* 3. TUNE IMAGE (LIGHT, TONE, COLOR, DETAIL) */}
         {(activeTool === "adjust" || activeTool === "select") && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
+          <div className="space-y-5">
+            <div className="flex items-center justify-between border-b border-[#222227] pb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-[#f0f0ec]">TUNE IMAGE</span>
-                <span className="text-[9px] px-1 py-0.2 rounded bg-[#4b9fef]/10 text-[#4b9fef] font-bold">
-                  PRO
-                </span>
+                <span className="text-xs font-semibold text-[#ededed]">TUNE IMAGE</span>
               </div>
               {onResetAdjustments && (
                 <button
                   onClick={onResetAdjustments}
-                  className="text-[10px] text-[#4b9fef] hover:underline cursor-pointer"
+                  className="text-[11px] text-[#3b82f6] hover:underline cursor-pointer"
                 >
                   Reset All
                 </button>
               )}
             </div>
 
-            {/* A. LIGHT & EXPOSURE */}
-            <div className="space-y-4">
-              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                Light & Exposure
+            {/* LIGHT: Exposure, Brightness, Contrast */}
+            <div className="space-y-3">
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-[#84848d]">
+                Light
               </span>
 
               {/* Exposure */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Exposure</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Exposure</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.exposure > 0 ? `+${adjustments.exposure}` : adjustments.exposure}
                   </span>
                 </div>
@@ -302,15 +299,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.exposure}
                   onChange={(e) => onChangeAdjustment("exposure", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Brightness */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Brightness</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Brightness</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.brightness > 0
                       ? `+${adjustments.brightness}`
                       : adjustments.brightness}
@@ -322,15 +319,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.brightness}
                   onChange={(e) => onChangeAdjustment("brightness", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Contrast */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Contrast</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Contrast</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.contrast > 0 ? `+${adjustments.contrast}` : adjustments.contrast}
                   </span>
                 </div>
@@ -340,22 +337,22 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.contrast}
                   onChange={(e) => onChangeAdjustment("contrast", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
             </div>
 
-            {/* B. DYNAMIC RANGE (HIGHLIGHTS, SHADOWS, WHITES, BLACKS) */}
-            <div className="space-y-4 pt-2 border-t border-[#26272b]">
-              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                Dynamic Range & Tones
+            {/* TONE: Highlights, Shadows, Whites, Blacks */}
+            <div className="space-y-3 pt-2 border-t border-[#222227]">
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-[#84848d]">
+                Tone
               </span>
 
               {/* Highlights */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Highlights</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Highlights</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.highlights > 0
                       ? `+${adjustments.highlights}`
                       : adjustments.highlights}
@@ -367,15 +364,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.highlights}
                   onChange={(e) => onChangeAdjustment("highlights", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Shadows */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Shadows</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Shadows</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.shadows > 0 ? `+${adjustments.shadows}` : adjustments.shadows}
                   </span>
                 </div>
@@ -385,15 +382,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.shadows}
                   onChange={(e) => onChangeAdjustment("shadows", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Whites */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Whites</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Whites</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.whites > 0 ? `+${adjustments.whites}` : adjustments.whites}
                   </span>
                 </div>
@@ -403,15 +400,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.whites}
                   onChange={(e) => onChangeAdjustment("whites", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Blacks */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Blacks</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Blacks</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.blacks > 0 ? `+${adjustments.blacks}` : adjustments.blacks}
                   </span>
                 </div>
@@ -421,16 +418,16 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.blacks}
                   onChange={(e) => onChangeAdjustment("blacks", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
             </div>
 
-            {/* C. COLOR & WHITE BALANCE */}
-            <div className="space-y-4 pt-2 border-t border-[#26272b]">
+            {/* COLOR: Temperature, Tint, Saturation, Vibrance */}
+            <div className="space-y-3 pt-2 border-t border-[#222227]">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                  Color & White Balance
+                <span className="text-[10px] uppercase font-semibold tracking-wider text-[#84848d]">
+                  Color
                 </span>
                 <button
                   onClick={onToggleEyedropper}
@@ -438,11 +435,11 @@ export default function RightPanel({
                     px-2 py-0.5 text-[10px] rounded border flex items-center gap-1 transition-all cursor-pointer
                     ${
                       isEyedropperActive
-                        ? "bg-[#4b9fef] text-black border-[#4b9fef] font-bold"
-                        : "bg-[#18191e] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+                        ? "bg-[#3b82f6] text-white border-[#3b82f6] font-semibold"
+                        : "bg-[#16161a] text-[#84848d] border-[#222227] hover:text-[#ededed] hover:border-[#2d2d34]"
                     }
                   `}
-                  title="Eyedropper: Click on photo to sample neutral gray"
+                  title="Eyedropper: Sample neutral gray on photo"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
@@ -452,15 +449,15 @@ export default function RightPanel({
                       d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
                     />
                   </svg>
-                  {isEyedropperActive ? "Sampling..." : "Eyedropper"}
+                  <span>{isEyedropperActive ? "Sampling..." : "Eyedropper"}</span>
                 </button>
               </div>
 
               {/* Temperature */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Temperature</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Temperature</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.temperature > 0
                       ? `+${adjustments.temperature}`
                       : adjustments.temperature}
@@ -472,15 +469,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.temperature}
                   onChange={(e) => onChangeAdjustment("temperature", Number(e.target.value))}
-                  className="w-full accent-amber-400 h-1.5 bg-gradient-to-r from-blue-600 via-[#26272b] to-amber-500 rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Tint */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Tint</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Tint</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.tint > 0 ? `+${adjustments.tint}` : adjustments.tint}
                   </span>
                 </div>
@@ -490,15 +487,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.tint}
                   onChange={(e) => onChangeAdjustment("tint", Number(e.target.value))}
-                  className="w-full accent-fuchsia-400 h-1.5 bg-gradient-to-r from-emerald-600 via-[#26272b] to-fuchsia-600 rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Saturation */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Saturation</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Saturation</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.saturation > 0
                       ? `+${adjustments.saturation}`
                       : adjustments.saturation}
@@ -510,15 +507,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.saturation}
                   onChange={(e) => onChangeAdjustment("saturation", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Vibrance */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Vibrance (Skin Protected)</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Vibrance</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.vibrance > 0 ? `+${adjustments.vibrance}` : adjustments.vibrance}
                   </span>
                 </div>
@@ -528,22 +525,22 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.vibrance}
                   onChange={(e) => onChangeAdjustment("vibrance", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
             </div>
 
-            {/* D. DETAIL & TEXTURE (CLARITY, SHARPNESS, BLUR, GRAIN, VIGNETTE) */}
-            <div className="space-y-4 pt-2 border-t border-[#26272b]">
-              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                Detail, Blur & Texture
+            {/* DETAIL: Clarity, Sharpness, Blur, Film Grain, Vignette */}
+            <div className="space-y-3 pt-2 border-t border-[#222227]">
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-[#84848d]">
+                Detail & Effects
               </span>
 
               {/* Clarity */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Clarity (Local Contrast)</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Clarity</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {(adjustments.clarity ?? adjustments.structure ?? 0) > 0
                       ? `+${adjustments.clarity ?? adjustments.structure ?? 0}`
                       : adjustments.clarity ?? adjustments.structure ?? 0}
@@ -555,15 +552,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.clarity ?? adjustments.structure ?? 0}
                   onChange={(e) => onChangeAdjustment("clarity", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Sharpness */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Sharpness (Unsharp Mask)</span>
-                  <span className="text-[#f0f0ec] font-bold">{adjustments.sharpness ?? 0}</span>
+                  <span className="text-[#84848d]">Sharpness</span>
+                  <span className="font-mono text-xs text-[#ededed]">{adjustments.sharpness ?? 0}</span>
                 </div>
                 <input
                   type="range"
@@ -571,15 +568,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.sharpness ?? 0}
                   onChange={(e) => onChangeAdjustment("sharpness", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Blur */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Gaussian Blur</span>
-                  <span className="text-[#f0f0ec] font-bold">{adjustments.blur ?? 0}</span>
+                  <span className="text-[#84848d]">Blur</span>
+                  <span className="font-mono text-xs text-[#ededed]">{adjustments.blur ?? 0}</span>
                 </div>
                 <input
                   type="range"
@@ -587,15 +584,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.blur ?? 0}
                   onChange={(e) => onChangeAdjustment("blur", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Film Grain */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Film Grain</span>
-                  <span className="text-[#f0f0ec] font-bold">{adjustments.grain}%</span>
+                  <span className="text-[#84848d]">Film Grain</span>
+                  <span className="font-mono text-xs text-[#ededed]">{adjustments.grain}%</span>
                 </div>
                 <input
                   type="range"
@@ -603,15 +600,15 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.grain}
                   onChange={(e) => onChangeAdjustment("grain", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
 
               {/* Vignette */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Vignette</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Vignette</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {adjustments.vignette > 0 ? `+${adjustments.vignette}` : adjustments.vignette}
                   </span>
                 </div>
@@ -621,7 +618,7 @@ export default function RightPanel({
                   max="100"
                   value={adjustments.vignette}
                   onChange={(e) => onChangeAdjustment("vignette", Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
             </div>
@@ -630,40 +627,32 @@ export default function RightPanel({
 
         {/* 4. CROP, ROTATE & STRAIGHTEN */}
         {activeTool === "crop" && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
-              <span className="text-xs font-bold text-[#f0f0ec]">CROP & STRAIGHTEN</span>
+          <div className="space-y-5">
+            <div className="flex items-center justify-between border-b border-[#222227] pb-2">
+              <span className="text-xs font-semibold text-[#ededed]">CROP & STRAIGHTEN</span>
               {onResetCrop && (
                 <button
                   onClick={onResetCrop}
-                  className="text-[10px] text-[#4b9fef] hover:underline cursor-pointer"
+                  className="text-[11px] text-[#3b82f6] hover:underline cursor-pointer"
                 >
                   Reset to Full
                 </button>
               )}
             </div>
 
-            {/* Quick Action: Apply Crop Button */}
+            {/* Apply Crop Button */}
             {onApplyCrop && (
               <button
                 onClick={onApplyCrop}
-                className="w-full py-2 bg-[#4b9fef] hover:bg-[#3b8fe0] text-black font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                className="w-full py-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-medium text-xs rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2.5"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                Apply Crop Selection
+                <span>✓</span> Apply Crop Selection
               </button>
             )}
 
             {/* Aspect Ratio Presets */}
             <div className="space-y-2">
-              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-[#84848d]">
                 Aspect Ratio
               </span>
               <div className="grid grid-cols-2 gap-1.5">
@@ -677,8 +666,8 @@ export default function RightPanel({
                         px-2.5 py-1.5 text-xs rounded border text-left cursor-pointer transition-colors
                         ${
                           isSelected
-                            ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef] font-bold"
-                            : "bg-[#18191e] border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                            ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-[#3b82f6] font-semibold"
+                            : "bg-[#16161a] border-[#222227] text-[#84848d] hover:text-[#ededed] hover:border-[#2d2d34]"
                         }
                       `}
                     >
@@ -689,11 +678,11 @@ export default function RightPanel({
               </div>
             </div>
 
-            {/* Straighten fine angle slider */}
-            <div className="space-y-2 pt-2 border-t border-[#26272b]">
+            {/* Straighten Angle */}
+            <div className="space-y-1.5 pt-2 border-t border-[#222227]">
               <div className="flex justify-between text-xs">
-                <span className="text-[#9a9d9a]">Straighten Angle</span>
-                <span className="text-[#4b9fef] font-bold">
+                <span className="text-[#84848d]">Straighten Angle</span>
+                <span className="font-mono text-xs text-[#ededed]">
                   {transformState.straighten
                     ? `${transformState.straighten > 0 ? "+" : ""}${transformState.straighten}°`
                     : "0°"}
@@ -705,13 +694,13 @@ export default function RightPanel({
                 max="45"
                 value={transformState.straighten || 0}
                 onChange={(e) => handleStraightenChange(Number(e.target.value))}
-                className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                className="w-full"
               />
-              <div className="flex justify-between text-[10px] text-[#9a9d9a]">
+              <div className="flex justify-between text-[10px] text-[#5c5c66]">
                 <span>-45°</span>
                 <button
                   onClick={() => handleStraightenChange(0)}
-                  className="text-[#4b9fef] hover:underline cursor-pointer"
+                  className="text-[#3b82f6] hover:underline cursor-pointer"
                 >
                   Reset 0°
                 </button>
@@ -719,40 +708,40 @@ export default function RightPanel({
               </div>
             </div>
 
-            {/* 90° Rotate & Flip */}
-            <div className="space-y-2 pt-2 border-t border-[#26272b]">
-              <span className="text-[10px] text-[#9a9d9a] uppercase font-bold tracking-wider">
-                Transform
+            {/* Transform Rotate & Flip */}
+            <div className="space-y-2 pt-2 border-t border-[#222227]">
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-[#84848d]">
+                Orientation
               </span>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   onClick={handleRotateCCW}
-                  className="p-2 bg-[#18191e] border border-[#26272b] hover:border-[#9a9d9a] rounded text-xs text-[#f0f0ec] flex items-center justify-center gap-1 cursor-pointer"
+                  className="p-1.5 bg-[#16161a] border border-[#222227] hover:border-[#2d2d34] rounded text-xs text-[#ededed] flex items-center justify-center gap-1 cursor-pointer transition-colors"
                 >
                   ↺ 90° CCW
                 </button>
                 <button
                   onClick={handleRotateCW}
-                  className="p-2 bg-[#18191e] border border-[#26272b] hover:border-[#9a9d9a] rounded text-xs text-[#f0f0ec] flex items-center justify-center gap-1 cursor-pointer"
+                  className="p-1.5 bg-[#16161a] border border-[#222227] hover:border-[#2d2d34] rounded text-xs text-[#ededed] flex items-center justify-center gap-1 cursor-pointer transition-colors"
                 >
                   ↻ 90° CW
                 </button>
                 <button
                   onClick={handleFlipH}
-                  className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                  className={`p-1.5 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors ${
                     transformState.flipH
-                      ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]"
-                      : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
+                      ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-[#3b82f6]"
+                      : "bg-[#16161a] border-[#222227] text-[#ededed] hover:border-[#2d2d34]"
                   }`}
                 >
                   ⇄ Flip H
                 </button>
                 <button
                   onClick={handleFlipV}
-                  className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                  className={`p-1.5 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors ${
                     transformState.flipV
-                      ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]"
-                      : "bg-[#18191e] border-[#26272b] text-[#f0f0ec]"
+                      ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-[#3b82f6]"
+                      : "bg-[#16161a] border-[#222227] text-[#ededed] hover:border-[#2d2d34]"
                   }`}
                 >
                   ⇅ Flip V
@@ -762,25 +751,25 @@ export default function RightPanel({
           </div>
         )}
 
-        {/* 5. PROFESSIONAL PRESETS & LOOKS BROWSER */}
+        {/* 5. PRESETS & LOOKS */}
         {activeTool === "filter" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-[#26272b] pb-2">
+            <div className="flex items-center justify-between border-b border-[#222227] pb-2">
               <div>
-                <span className="text-xs font-bold text-[#f0f0ec]">PRESET PROFILES</span>
-                <p className="text-[10px] text-[#9a9d9a]">Non-destructive photographic grades</p>
+                <span className="text-xs font-semibold text-[#ededed]">PRESETS</span>
+                <p className="text-[10px] text-[#84848d]">Non-destructive photographic grades</p>
               </div>
               {onResetAdjustments && (
                 <button
                   onClick={onResetAdjustments}
-                  className="text-[10px] text-[#4b9fef] hover:underline cursor-pointer"
+                  className="text-[11px] text-[#3b82f6] hover:underline cursor-pointer"
                 >
                   Reset
                 </button>
               )}
             </div>
 
-            {/* Category Filter Pills */}
+            {/* Category Filter Chips */}
             <div className="flex flex-wrap gap-1">
               {PRESET_CATEGORIES.map((cat) => (
                 <button
@@ -790,8 +779,8 @@ export default function RightPanel({
                     px-2 py-0.5 text-[10px] rounded-full border transition-colors cursor-pointer
                     ${
                       presetCategory === cat
-                        ? "bg-[#4b9fef] text-black border-[#4b9fef] font-bold"
-                        : "bg-[#18191e] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+                        ? "bg-[#3b82f6] text-white border-[#3b82f6] font-medium"
+                        : "bg-[#16161a] text-[#84848d] border-[#222227] hover:text-[#ededed]"
                     }
                   `}
                 >
@@ -802,10 +791,10 @@ export default function RightPanel({
 
             {/* Preset Intensity Slider */}
             {selectedPresetId && (
-              <div className="p-3 bg-[#18191e] border border-[#4b9fef]/30 rounded-lg space-y-1.5">
+              <div className="p-2.5 bg-[#16161a] border border-[#222227] rounded-lg space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Preset Intensity</span>
-                  <span className="text-[#4b9fef] font-bold">{presetIntensity}%</span>
+                  <span className="text-[#84848d]">Preset Intensity</span>
+                  <span className="font-mono text-xs text-[#ededed]">{presetIntensity}%</span>
                 </div>
                 <input
                   type="range"
@@ -813,13 +802,13 @@ export default function RightPanel({
                   max="150"
                   value={presetIntensity}
                   onChange={(e) => handleIntensityChange(Number(e.target.value))}
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
             )}
 
-            {/* Preset Cards Grid */}
-            <div className="grid grid-cols-1 gap-2.5">
+            {/* Preset Cards List */}
+            <div className="grid grid-cols-1 gap-2">
               {filteredPresets.map((preset) => {
                 const isSelected = selectedPresetId === preset.id;
                 return (
@@ -827,34 +816,34 @@ export default function RightPanel({
                     key={preset.id}
                     onClick={() => handlePresetClick(preset)}
                     className={`
-                      p-3 rounded-lg bg-[#18191e] border text-left transition-all cursor-pointer group flex flex-col gap-1.5
+                      p-2.5 rounded-lg bg-[#16161a] border text-left transition-all cursor-pointer group flex flex-col gap-1
                       ${
                         isSelected
-                          ? "border-[#4b9fef] ring-1 ring-[#4b9fef] bg-[#4b9fef]/5"
-                          : "border-[#26272b] hover:border-[#4b9fef]/60"
+                          ? "border-[#3b82f6] bg-[#3b82f6]/5 ring-1 ring-[#3b82f6]"
+                          : "border-[#222227] hover:border-[#2d2d34]"
                       }
                     `}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div
-                          className={`w-4 h-4 rounded-full bg-gradient-to-br ${preset.previewBg || "from-sky-500 to-indigo-600"}`}
+                          className={`w-3.5 h-3.5 rounded-full bg-gradient-to-br ${preset.previewBg || "from-sky-500 to-indigo-600"}`}
                         />
                         <span
-                          className={`text-xs font-bold ${
-                            isSelected ? "text-[#4b9fef]" : "text-[#f0f0ec] group-hover:text-[#4b9fef]"
+                          className={`text-xs font-semibold ${
+                            isSelected ? "text-[#3b82f6]" : "text-[#ededed] group-hover:text-[#3b82f6]"
                           }`}
                         >
                           {preset.name}
                         </span>
                       </div>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 bg-black/60 rounded text-[#9a9d9a] border border-white/10">
+                      <span className="text-[9px] px-1.5 py-0.2 bg-[#121215] rounded text-[#84848d] border border-[#222227]">
                         {preset.tag || preset.category.toUpperCase()}
                       </span>
                     </div>
 
                     {preset.description && (
-                      <p className="text-[10px] text-[#9a9d9a] line-clamp-2 leading-relaxed">
+                      <p className="text-[10px] text-[#84848d] line-clamp-2 leading-relaxed">
                         {preset.description}
                       </p>
                     )}
@@ -868,12 +857,12 @@ export default function RightPanel({
         {/* 6. TEXT TOOL */}
         {activeTool === "text" && (
           <div className="space-y-4">
-            <span className="text-xs font-bold text-[#f0f0ec]">
+            <span className="text-xs font-semibold text-[#ededed]">
               {isTextLayerSelected ? "EDIT TEXT LAYER" : "ADD TEXT LAYER"}
             </span>
 
-            <div className="space-y-1.5">
-              <span className="text-xs text-[#9a9d9a]">Text Content</span>
+            <div className="space-y-1">
+              <span className="text-xs text-[#84848d]">Text Content</span>
               <input
                 type="text"
                 value={textInput}
@@ -883,12 +872,12 @@ export default function RightPanel({
                     onUpdateTextLayer(selectedLayerId, { text: e.target.value });
                   }
                 }}
-                className="w-full px-3 py-2 bg-[#18191e] border border-[#26272b] rounded text-xs text-[#f0f0ec] focus:outline-none focus:border-[#4b9fef]"
+                className="w-full px-2.5 py-1.5 bg-[#16161a] border border-[#222227] rounded text-xs text-[#ededed] focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <span className="text-xs text-[#9a9d9a]">Font Family</span>
+            <div className="space-y-1">
+              <span className="text-xs text-[#84848d]">Font Family</span>
               <select
                 value={selectedFont.name}
                 onChange={(e) => {
@@ -900,7 +889,7 @@ export default function RightPanel({
                     }
                   }
                 }}
-                className="w-full px-3 py-2 bg-[#18191e] border border-[#26272b] rounded text-xs text-[#f0f0ec] focus:outline-none focus:border-[#4b9fef]"
+                className="w-full px-2.5 py-1.5 bg-[#16161a] border border-[#222227] rounded text-xs text-[#ededed] focus:outline-none focus:border-[#3b82f6]"
               >
                 {CATEGORIZED_FONTS.map((font) => (
                   <option key={font.name} value={font.name}>
@@ -911,8 +900,8 @@ export default function RightPanel({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <span className="text-xs text-[#9a9d9a]">Font Size</span>
+              <div className="space-y-1">
+                <span className="text-xs text-[#84848d]">Font Size</span>
                 <input
                   type="number"
                   min="12"
@@ -925,12 +914,12 @@ export default function RightPanel({
                       onUpdateTextLayer(selectedLayerId, { fontSize: size });
                     }
                   }}
-                  className="w-full px-3 py-2 bg-[#18191e] border border-[#26272b] rounded text-xs text-[#f0f0ec]"
+                  className="w-full px-2.5 py-1.5 bg-[#16161a] border border-[#222227] rounded text-xs text-[#ededed]"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <span className="text-xs text-[#9a9d9a]">Text Color</span>
+              <div className="space-y-1">
+                <span className="text-xs text-[#84848d]">Text Color</span>
                 <input
                   type="color"
                   value={textColorInput}
@@ -940,7 +929,7 @@ export default function RightPanel({
                       onUpdateTextLayer(selectedLayerId, { color: e.target.value });
                     }
                   }}
-                  className="w-full h-9 p-1 bg-[#18191e] border border-[#26272b] rounded cursor-pointer"
+                  className="w-full h-8 p-1 bg-[#16161a] border border-[#222227] rounded cursor-pointer"
                 />
               </div>
             </div>
@@ -956,7 +945,7 @@ export default function RightPanel({
                     selectedFont.category as any
                   );
                 }}
-                className="w-full py-2.5 bg-[#4b9fef] text-black font-bold rounded text-xs hover:bg-[#3b8fe0] transition-colors cursor-pointer"
+                className="w-full py-2 bg-[#2563eb] text-white font-medium rounded text-xs hover:bg-[#1d4ed8] transition-colors cursor-pointer"
               >
                 + Add Text to Canvas
               </button>
@@ -967,11 +956,11 @@ export default function RightPanel({
         {/* 7. LAYERS & DOUBLE EXPOSURE */}
         {activeTool === "layers" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#f0f0ec]">LAYERS & STACK</span>
+            <div className="flex items-center justify-between border-b border-[#222227] pb-2">
+              <span className="text-xs font-semibold text-[#ededed]">LAYERS</span>
               <button
                 onClick={() => doubleExposureFileInputRef.current?.click()}
-                className="px-2 py-1 text-[11px] rounded bg-[#18191e] border border-[#26272b] text-[#4b9fef] hover:border-[#4b9fef] cursor-pointer flex items-center gap-1"
+                className="px-2 py-0.5 text-[11px] rounded bg-[#16161a] border border-[#222227] text-[#3b82f6] hover:border-[#3b82f6] cursor-pointer flex items-center gap-1 transition-colors"
                 title="Blend second image (Double Exposure)"
               >
                 + Double Exposure
@@ -992,14 +981,16 @@ export default function RightPanel({
 
             {/* Double exposure controls when selected */}
             {isDoubleExposureSelected && selectedLayer && selectedLayer.doubleExposureData && (
-              <div className="p-3 bg-[#18191e] border border-[#4b9fef]/40 rounded-lg space-y-3">
-                <span className="text-xs font-bold text-[#4b9fef]">Double Exposure Settings</span>
+              <div className="p-3 bg-[#16161a] border border-[#3b82f6]/30 rounded-lg space-y-2.5">
+                <span className="text-xs font-semibold text-[#3b82f6]">Double Exposure Blend</span>
 
                 {/* Opacity */}
                 <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-[#9a9d9a]">
+                  <div className="flex justify-between text-xs text-[#84848d]">
                     <span>Blend Opacity</span>
-                    <span>{Math.round(selectedLayer.doubleExposureData.opacity * 100)}%</span>
+                    <span className="font-mono text-xs text-[#ededed]">
+                      {Math.round(selectedLayer.doubleExposureData.opacity * 100)}%
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -1015,13 +1006,13 @@ export default function RightPanel({
                         );
                       }
                     }}
-                    className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                    className="w-full"
                   />
                 </div>
 
                 {/* Blend Mode */}
                 <div className="space-y-1">
-                  <span className="text-xs text-[#9a9d9a]">Blend Mode</span>
+                  <span className="text-xs text-[#84848d]">Blend Mode</span>
                   <select
                     value={selectedLayer.doubleExposureData.blendMode}
                     onChange={(e) => {
@@ -1033,7 +1024,7 @@ export default function RightPanel({
                         );
                       }
                     }}
-                    className="w-full px-2 py-1.5 bg-[#131418] border border-[#26272b] rounded text-xs text-[#f0f0ec]"
+                    className="w-full px-2 py-1 bg-[#121215] border border-[#222227] rounded text-xs text-[#ededed]"
                   >
                     <option value="normal">Normal</option>
                     <option value="screen">Screen (Lighten)</option>
@@ -1061,26 +1052,26 @@ export default function RightPanel({
                       flex items-center justify-between p-2 rounded border text-xs cursor-pointer transition-all
                       ${
                         isSelected
-                          ? "bg-[#4b9fef]/15 border-[#4b9fef] text-[#f0f0ec]"
-                          : "bg-[#18191e] border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                          ? "bg-[#3b82f6]/10 border-[#3b82f6]/50 text-[#ededed]"
+                          : "bg-[#16161a] border-[#222227] text-[#84848d] hover:text-[#ededed] hover:border-[#2d2d34]"
                       }
                     `}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <span className="text-[10px] text-[#9a9d9a]">#{layers.length - idx}</span>
-                      <span className="font-bold truncate">{layer.name}</span>
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-[#26272b] text-[#9a9d9a] uppercase">
+                      <span className="text-[10px] text-[#5c5c66]">#{layers.length - idx}</span>
+                      <span className="font-medium truncate">{layer.name}</span>
+                      <span className="text-[9px] px-1 py-0.2 rounded bg-[#121215] text-[#84848d] uppercase border border-[#222227]">
                         {layer.type}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onToggleLayerVisibility(layer.id);
                         }}
-                        className="text-[#9a9d9a] hover:text-[#f0f0ec] p-1 cursor-pointer"
+                        className="text-[#84848d] hover:text-[#ededed] p-1 cursor-pointer transition-colors"
                         title="Toggle visibility"
                       >
                         {layer.visible ? "👁" : "🚫"}
@@ -1091,7 +1082,7 @@ export default function RightPanel({
                             e.stopPropagation();
                             onDeleteLayer(layer.id);
                           }}
-                          className="text-red-400 hover:text-red-300 p-1 cursor-pointer"
+                          className="text-red-400 hover:text-red-300 p-1 cursor-pointer transition-colors"
                           title="Delete layer"
                         >
                           ✕
@@ -1108,21 +1099,23 @@ export default function RightPanel({
         {/* 8. EXPORT PANEL */}
         {activeTool === "export" && (
           <div className="space-y-4">
-            <span className="text-xs font-bold text-[#f0f0ec]">EXPORT IMAGE</span>
+            <div className="border-b border-[#222227] pb-2">
+              <span className="text-xs font-semibold text-[#ededed]">EXPORT IMAGE</span>
+            </div>
 
             <div className="space-y-1.5">
-              <span className="text-xs text-[#9a9d9a]">File Format</span>
+              <span className="text-xs text-[#84848d]">File Format</span>
               <div className="grid grid-cols-3 gap-1.5">
                 {(["image/jpeg", "image/png", "image/webp"] as const).map((fmt) => (
                   <button
                     key={fmt}
                     onClick={() => onChangeExportSettings({ ...exportSettings, format: fmt })}
                     className={`
-                      py-2 text-xs rounded border uppercase font-bold cursor-pointer transition-colors
+                      py-1.5 text-xs rounded border uppercase font-medium cursor-pointer transition-colors
                       ${
                         exportSettings.format === fmt
-                          ? "bg-[#4b9fef]/20 border-[#4b9fef] text-[#4b9fef]"
-                          : "bg-[#18191e] border-[#26272b] text-[#9a9d9a] hover:text-[#f0f0ec]"
+                          ? "bg-[#3b82f6]/15 border-[#3b82f6]/50 text-[#3b82f6] font-semibold"
+                          : "bg-[#16161a] border-[#222227] text-[#84848d] hover:text-[#ededed] hover:border-[#2d2d34]"
                       }
                     `}
                   >
@@ -1133,10 +1126,10 @@ export default function RightPanel({
             </div>
 
             {exportSettings.format !== "image/png" && (
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#9a9d9a]">Quality</span>
-                  <span className="text-[#f0f0ec] font-bold">
+                  <span className="text-[#84848d]">Quality</span>
+                  <span className="font-mono text-xs text-[#ededed]">
                     {Math.round(exportSettings.quality * 100)}%
                   </span>
                 </div>
@@ -1151,14 +1144,14 @@ export default function RightPanel({
                       quality: Number(e.target.value) / 100,
                     })
                   }
-                  className="w-full accent-[#4b9fef] h-1.5 bg-[#26272b] rounded-lg appearance-none cursor-pointer"
+                  className="w-full"
                 />
               </div>
             )}
 
             <button
               onClick={onTriggerExport}
-              className="w-full py-3 bg-[#4b9fef] text-black font-bold rounded text-xs hover:bg-[#3b8fe0] transition-colors cursor-pointer mt-4 shadow-lg flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-medium rounded text-xs transition-colors cursor-pointer mt-3 shadow-md flex items-center justify-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -1168,7 +1161,7 @@ export default function RightPanel({
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                 />
               </svg>
-              Download Full-Res Photo
+              <span>Download Photo</span>
             </button>
           </div>
         )}
@@ -1178,7 +1171,7 @@ export default function RightPanel({
       {ctxMenu && (
         <div
           style={{ top: `${ctxMenu.y}px`, left: `${ctxMenu.x}px` }}
-          className="fixed z-50 bg-[#18191e] border border-[#26272b] rounded-lg shadow-2xl py-1 w-44 font-mono text-xs select-none"
+          className="fixed z-50 bg-[#16161a] border border-[#222227] rounded-md shadow-2xl py-1 w-40 text-xs select-none"
           onClick={(e) => e.stopPropagation()}
         >
           {onDuplicateLayer && (
@@ -1187,7 +1180,7 @@ export default function RightPanel({
                 onDuplicateLayer(ctxMenu.layerId);
                 closeCtxMenu();
               }}
-              className="w-full px-3 py-1.5 text-left text-[#f0f0ec] hover:bg-[#4b9fef]/15 hover:text-[#4b9fef] flex items-center gap-2 cursor-pointer"
+              className="w-full px-3 py-1.5 text-left text-[#ededed] hover:bg-[#1e1e24] hover:text-[#3b82f6] flex items-center gap-2 cursor-pointer transition-colors"
             >
               Duplicate Layer
             </button>
@@ -1197,7 +1190,7 @@ export default function RightPanel({
               onToggleLayerVisibility(ctxMenu.layerId);
               closeCtxMenu();
             }}
-            className="w-full px-3 py-1.5 text-left text-[#f0f0ec] hover:bg-[#4b9fef]/15 hover:text-[#4b9fef] flex items-center gap-2 cursor-pointer"
+            className="w-full px-3 py-1.5 text-left text-[#ededed] hover:bg-[#1e1e24] hover:text-[#3b82f6] flex items-center gap-2 cursor-pointer transition-colors"
           >
             Toggle Visibility
           </button>
@@ -1206,7 +1199,7 @@ export default function RightPanel({
               onDeleteLayer(ctxMenu.layerId);
               closeCtxMenu();
             }}
-            className="w-full px-3 py-1.5 text-left text-red-400 hover:bg-red-500/15 flex items-center gap-2 cursor-pointer border-t border-[#26272b] mt-1 pt-1"
+            className="w-full px-3 py-1.5 text-left text-red-400 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer border-t border-[#222227] mt-1 pt-1 transition-colors"
           >
             Delete Layer
           </button>

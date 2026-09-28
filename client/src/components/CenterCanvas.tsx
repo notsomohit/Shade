@@ -632,34 +632,34 @@ const CenterCanvas = memo(function CenterCanvas({
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className="flex-1 h-full bg-[#0a0a0c] flex items-center justify-center p-6 relative overflow-hidden select-none"
+      className="flex-1 h-full bg-[#09090b] flex items-center justify-center p-6 relative overflow-hidden select-none"
     >
-      {/* Background Grid Pattern */}
+      {/* Subtle Technical Canvas Grid Pattern */}
       <div
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        className="absolute inset-0 opacity-[0.02] pointer-events-none"
         style={{
           backgroundImage:
-            "radial-gradient(circle at 1px 1px, #f0f0ec 1px, transparent 0)",
-          backgroundSize: "20px 20px",
+            "linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)",
+          backgroundSize: "32px 32px",
         }}
       />
 
       {/* Eyedropper indicator banner */}
       {isEyedropperActive && (
-        <div className="absolute top-4 z-40 px-4 py-2 bg-[#4b9fef] text-black font-mono font-bold text-xs rounded-full shadow-xl flex items-center gap-2 animate-bounce">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="absolute top-4 z-40 px-3.5 py-1.5 bg-[#2563eb] text-white font-medium text-xs rounded-md shadow-xl flex items-center gap-2 animate-bounce">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
           </svg>
-          Click anywhere on the photo to calibrate White Balance
+          <span>Click anywhere on the photo to calibrate White Balance</span>
         </div>
       )}
 
       {/* Drag upload overlay */}
       {isDraggingUpload && (
-        <div className="absolute inset-0 bg-[#4b9fef]/10 border-2 border-dashed border-[#4b9fef] z-50 flex items-center justify-center backdrop-blur-sm pointer-events-none">
-          <div className="text-center font-mono">
-            <span className="text-[#4b9fef] text-lg font-bold">
-              Drop image to load
+        <div className="absolute inset-0 bg-[#3b82f6]/10 border-2 border-dashed border-[#3b82f6] z-50 flex items-center justify-center backdrop-blur-sm pointer-events-none">
+          <div className="text-center">
+            <span className="text-[#3b82f6] text-base font-semibold">
+              Drop photo to load
             </span>
           </div>
         </div>
@@ -671,7 +671,7 @@ const CenterCanvas = memo(function CenterCanvas({
           ref={compareContainerRef}
           onMouseDown={handleComparePointerDown}
           onTouchStart={handleComparePointerDown}
-          className="relative max-w-full max-h-full rounded-lg shadow-2xl border border-[#26272b] overflow-hidden cursor-ew-resize select-none touch-none"
+          className="relative max-w-full max-h-full rounded shadow-2xl border border-[#222227] overflow-hidden cursor-ew-resize select-none touch-none"
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
             transformOrigin: "center center",
@@ -709,7 +709,7 @@ const CenterCanvas = memo(function CenterCanvas({
                       position: "absolute",
                       left: `${t.x * 100}%`,
                       top: `${t.y * 100}%`,
-                      fontFamily: t.fontFamily || "ui-monospace, monospace",
+                      fontFamily: t.fontFamily || "inherit",
                       fontSize: `${t.fontSize}px`,
                       color: t.color,
                       lineHeight: 1,
@@ -724,22 +724,22 @@ const CenterCanvas = memo(function CenterCanvas({
 
           {/* Draggable Divider Line & Handle */}
           <div
-            className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_10px_rgba(0,0,0,0.8)] z-30 pointer-events-none"
+            className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_8px_rgba(0,0,0,0.8)] z-30 pointer-events-none"
             style={{ left: `${dividerPercent}%` }}
           >
             {/* Center Circular Drag Handle */}
-            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-white text-black shadow-2xl flex items-center justify-center font-mono font-bold text-xs pointer-events-auto cursor-ew-resize border border-black/20 hover:scale-110 active:scale-95 transition-transform">
+            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white text-[#121215] shadow-2xl flex items-center justify-center font-bold text-[11px] pointer-events-auto cursor-ew-resize border border-black/20 hover:scale-110 active:scale-95 transition-transform">
               ↔
             </div>
           </div>
 
-          {/* Pinned Corner Badges: Left = Before (Original), Right = After (Edited) */}
-          <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#f0f0ec] border border-white/20 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
-            BEFORE (ORIGINAL)
+          {/* Pinned Corner Badges */}
+          <div className="absolute bottom-3 left-3 z-20 px-2 py-0.5 bg-[#121215]/90 backdrop-blur-md text-[#84848d] border border-[#222227] rounded text-[10px] uppercase font-semibold tracking-wider pointer-events-none">
+            Before
           </div>
 
-          <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 bg-black/80 backdrop-blur-md text-[#4b9fef] border border-[#4b9fef]/40 rounded text-[10px] font-mono font-bold tracking-wider pointer-events-none shadow-xl">
-            AFTER (EDITED)
+          <div className="absolute bottom-3 right-3 z-20 px-2 py-0.5 bg-[#121215]/90 backdrop-blur-md text-[#3b82f6] border border-[#3b82f6]/30 rounded text-[10px] uppercase font-semibold tracking-wider pointer-events-none">
+            After
           </div>
         </div>
       )}
@@ -749,7 +749,7 @@ const CenterCanvas = memo(function CenterCanvas({
         <div
           ref={canvasWrapperRef}
           onClick={handleCanvasContainerClick}
-          className={`relative max-w-full max-h-full rounded shadow-2xl border border-[#26272b] overflow-hidden ${
+          className={`relative max-w-full max-h-full rounded shadow-2xl border border-[#222227] overflow-hidden ${
             isEyedropperActive ? "cursor-crosshair" : activeTool === "selective" ? "cursor-crosshair" : ""
           }`}
           style={{
@@ -779,7 +779,7 @@ const CenterCanvas = memo(function CenterCanvas({
                     position: "absolute",
                     left: `${t.x * 100}%`,
                     top: `${t.y * 100}%`,
-                    fontFamily: t.fontFamily || "ui-monospace, monospace",
+                    fontFamily: t.fontFamily || "inherit",
                     fontSize: `${t.fontSize}px`,
                     color: t.color,
                     lineHeight: 1,
@@ -788,7 +788,7 @@ const CenterCanvas = memo(function CenterCanvas({
                     cursor-move select-none p-1 font-bold whitespace-nowrap will-change-transform
                     ${
                       isSelected
-                        ? "ring-2 ring-[#4b9fef] ring-offset-1 ring-offset-black/50 bg-[#4b9fef]/10 rounded shadow-lg"
+                        ? "ring-2 ring-[#3b82f6] ring-offset-1 ring-offset-black/50 bg-[#3b82f6]/10 rounded shadow-lg"
                         : "hover:ring-1 hover:ring-white/40 rounded"
                     }
                   `}
@@ -800,14 +800,14 @@ const CenterCanvas = memo(function CenterCanvas({
                     <div
                       onMouseDown={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
                       onTouchStart={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
-                      className="absolute -right-2 -bottom-2 w-4 h-4 bg-[#4b9fef] rounded-full border-2 border-black cursor-se-resize shadow-md"
+                      className="absolute -right-2 -bottom-2 w-3.5 h-3.5 bg-[#3b82f6] rounded-full border border-black cursor-se-resize shadow-md"
                     />
                   )}
                 </div>
               );
             })}
 
-          {/* Interactive Snapseed Selective Control Points Overlay */}
+          {/* Interactive Selective Control Points Overlay */}
           {activeTool === "selective" &&
             selectivePoints.map((pt, idx) => {
               const isSelected = selectedSelectivePointId === pt.id;
@@ -825,13 +825,13 @@ const CenterCanvas = memo(function CenterCanvas({
                         height: `${pt.radius * 200}%`,
                         transform: "translate(-50%, -50%)",
                       }}
-                      className="rounded-full border border-dashed border-[#4b9fef]/80 bg-[#4b9fef]/5 pointer-events-none flex items-center justify-end pr-1 will-change-transform"
+                      className="rounded-full border border-dashed border-[#3b82f6]/80 bg-[#3b82f6]/5 pointer-events-none flex items-center justify-end pr-1 will-change-transform"
                     >
                       {/* Radius resize handle on edge of circle */}
                       <div
                         onMouseDown={(e) => handlePointRadiusHandleDown(e, pt)}
                         onTouchStart={(e) => handlePointRadiusHandleDown(e, pt)}
-                        className="w-4 h-4 rounded-full bg-[#4b9fef] border-2 border-black cursor-ew-resize pointer-events-auto shadow-md"
+                        className="w-3.5 h-3.5 rounded-full bg-[#3b82f6] border border-black cursor-ew-resize pointer-events-auto shadow-md"
                         title="Drag to adjust affected radius"
                       />
                     </div>
@@ -848,11 +848,11 @@ const CenterCanvas = memo(function CenterCanvas({
                       transform: "translate(-50%, -50%)",
                     }}
                     className={`
-                      w-7 h-7 rounded-full flex items-center justify-center font-mono font-bold text-xs cursor-move shadow-xl will-change-transform
+                      w-6 h-6 rounded-full flex items-center justify-center font-mono font-bold text-xs cursor-move shadow-xl will-change-transform
                       ${
                         isSelected
-                          ? "bg-[#4b9fef] text-black ring-4 ring-[#4b9fef]/30 scale-110"
-                          : "bg-[#18191e] text-[#f0f0ec] border border-[#26272b] hover:border-[#4b9fef]"
+                          ? "bg-[#3b82f6] text-white ring-2 ring-[#3b82f6]/40 scale-105"
+                          : "bg-[#18181c] text-[#ededed] border border-[#2d2d34] hover:border-[#3b82f6]"
                       }
                     `}
                     title={`Control Point #${idx + 1}`}
@@ -868,7 +868,7 @@ const CenterCanvas = memo(function CenterCanvas({
             <>
               {/* Darkened Scrim overlay around crop box */}
               <div
-                className="absolute inset-0 pointer-events-none bg-black/60"
+                className="absolute inset-0 pointer-events-none bg-black/65"
                 style={{
                   clipPath: `polygon(
                     0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%,
@@ -893,18 +893,18 @@ const CenterCanvas = memo(function CenterCanvas({
                   width: `${cropRect.width * 100}%`,
                   height: `${cropRect.height * 100}%`,
                 }}
-                className="border-2 border-[#4b9fef] shadow-2xl cursor-move will-change-transform pointer-events-auto"
+                className="border border-[#3b82f6] shadow-2xl cursor-move will-change-transform pointer-events-auto"
               >
                 {/* 3x3 Rule-of-Thirds Grid */}
-                <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 opacity-60">
-                  <div className="border-r border-b border-white/40" />
-                  <div className="border-r border-b border-white/40" />
-                  <div className="border-b border-white/40" />
-                  <div className="border-r border-b border-white/40" />
-                  <div className="border-r border-b border-white/40" />
-                  <div className="border-b border-white/40" />
-                  <div className="border-r border-b border-white/40" />
-                  <div className="border-r border-b border-white/40" />
+                <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 opacity-50">
+                  <div className="border-r border-b border-white/30" />
+                  <div className="border-r border-b border-white/30" />
+                  <div className="border-b border-white/30" />
+                  <div className="border-r border-b border-white/30" />
+                  <div className="border-r border-b border-white/30" />
+                  <div className="border-b border-white/30" />
+                  <div className="border-r border-b border-white/30" />
+                  <div className="border-r border-b border-white/30" />
                   <div />
                 </div>
 
@@ -912,44 +912,44 @@ const CenterCanvas = memo(function CenterCanvas({
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "nw")}
                   onTouchStart={(e) => handleCropHandleDown(e, "nw")}
-                  className="absolute -top-2 -left-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nwse-resize shadow-md"
+                  className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nwse-resize shadow-md"
                 />
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "ne")}
                   onTouchStart={(e) => handleCropHandleDown(e, "ne")}
-                  className="absolute -top-2 -right-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nesw-resize shadow-md"
+                  className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nesw-resize shadow-md"
                 />
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "sw")}
                   onTouchStart={(e) => handleCropHandleDown(e, "sw")}
-                  className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nesw-resize shadow-md"
+                  className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nesw-resize shadow-md"
                 />
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "se")}
                   onTouchStart={(e) => handleCropHandleDown(e, "se")}
-                  className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border-2 border-[#4b9fef] rounded-sm cursor-nwse-resize shadow-md"
+                  className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-[#3b82f6] cursor-nwse-resize shadow-md"
                 />
 
                 {/* 4 Edge Handles */}
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "n")}
                   onTouchStart={(e) => handleCropHandleDown(e, "n")}
-                  className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-6 h-3 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ns-resize shadow-md"
+                  className="absolute -top-1 left-1/2 -translate-x-1/2 w-5 h-2 bg-white border border-[#3b82f6] rounded-xs cursor-ns-resize shadow-md"
                 />
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "s")}
                   onTouchStart={(e) => handleCropHandleDown(e, "s")}
-                  className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-3 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ns-resize shadow-md"
+                  className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-2 bg-white border border-[#3b82f6] rounded-xs cursor-ns-resize shadow-md"
                 />
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "w")}
                   onTouchStart={(e) => handleCropHandleDown(e, "w")}
-                  className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-6 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ew-resize shadow-md"
+                  className="absolute top-1/2 -left-1 -translate-y-1/2 w-2 h-5 bg-white border border-[#3b82f6] rounded-xs cursor-ew-resize shadow-md"
                 />
                 <div
                   onMouseDown={(e) => handleCropHandleDown(e, "e")}
                   onTouchStart={(e) => handleCropHandleDown(e, "e")}
-                  className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-6 bg-white border-2 border-[#4b9fef] rounded-sm cursor-ew-resize shadow-md"
+                  className="absolute top-1/2 -right-1 -translate-y-1/2 w-2 h-5 bg-white border border-[#3b82f6] rounded-xs cursor-ew-resize shadow-md"
                 />
 
                 {/* Apply Crop Action Button */}
@@ -959,9 +959,9 @@ const CenterCanvas = memo(function CenterCanvas({
                       e.stopPropagation();
                       applyActiveCrop();
                     }}
-                    className="px-2.5 py-1 bg-[#4b9fef] hover:bg-[#3b8fe0] text-black font-mono font-bold text-[10px] rounded shadow-lg flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 py-1 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-medium text-[11px] rounded shadow-lg flex items-center gap-1 cursor-pointer transition-colors"
                   >
-                    ✓ Apply Crop
+                    <span>✓</span> Apply Crop
                   </button>
                 </div>
               </div>
@@ -970,11 +970,11 @@ const CenterCanvas = memo(function CenterCanvas({
         </div>
       )}
 
-      {/* Empty State Upload Screen */}
+      {/* Empty State Upload Screen (SHADE Identity) */}
       {!hasImage && (
         <div
           onClick={() => fileInputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-4 p-12 border-2 border-dashed border-[#26272b] rounded-xl hover:border-[#4b9fef]/50 hover:bg-[#131418]/50 transition-all duration-200 cursor-pointer text-center max-w-md font-mono"
+          className="flex flex-col items-center justify-center gap-3.5 p-10 border border-dashed border-[#2d2d34] hover:border-[#3b82f6]/50 bg-[#121215]/60 hover:bg-[#121215] rounded-xl transition-all duration-150 cursor-pointer text-center max-w-sm"
         >
           <input
             ref={fileInputRef}
@@ -984,9 +984,9 @@ const CenterCanvas = memo(function CenterCanvas({
             className="hidden"
           />
 
-          <div className="w-16 h-16 rounded-full bg-[#18191e] border border-[#26272b] flex items-center justify-center text-[#4b9fef] shadow-inner">
+          <div className="w-12 h-12 rounded-full bg-[#18181c] border border-[#2d2d34] flex items-center justify-center text-[#84848d] group-hover:text-[#ededed]">
             <svg
-              className="w-8 h-8"
+              className="w-6 h-6"
               fill="none"
               stroke="currentColor"
               strokeWidth="1.5"
@@ -1000,17 +1000,17 @@ const CenterCanvas = memo(function CenterCanvas({
             </svg>
           </div>
 
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-bold text-[#f0f0ec]">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-semibold text-[#ededed]">
               Drop your photo here
             </span>
-            <span className="text-xs text-[#9a9d9a]">
+            <span className="text-xs text-[#84848d]">
               or click to browse from your device
             </span>
           </div>
 
-          <span className="text-[10px] text-[#4b9fef] bg-[#4b9fef]/10 px-2.5 py-1 rounded-full border border-[#4b9fef]/20">
-            JPG, PNG, WEBP, AVIF supported
+          <span className="text-[10px] text-[#5c5c66] pt-1">
+            JPEG · PNG · WEBP · AVIF
           </span>
         </div>
       )}

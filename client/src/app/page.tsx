@@ -704,7 +704,7 @@ export default function Home() {
     if (dataUrl) {
       const ext = exportSettings.format.split("/")[1];
       const link = document.createElement("a");
-      link.download = `studionorth-edit.${ext}`;
+      link.download = `shade-edit.${ext}`;
       link.href = dataUrl;
       link.click();
       showToast(`Exported as ${ext.toUpperCase()}`, "success");
@@ -839,7 +839,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0e0f12] text-[#f0f0ec] overflow-hidden font-mono antialiased">
+    <div className="flex flex-col h-screen w-screen bg-[#0c0c0e] text-[#ededed] overflow-hidden select-none antialiased">
       {/* Top Header Bar */}
       <TopBar
         hasImage={hasImage}

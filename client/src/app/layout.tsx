@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StudioNorth — Photo Editor",
+  title: "SHADE — Professional Photo Editor",
   description:
-    "A browser-based photo editing app with non-destructive adjustments, LUT filters, crop, text overlays, and PNG/JPEG export.",
+    "A clean, professional dark photo editor with non-destructive adjustments, tone curves, selective control points, presets, and high-resolution export.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

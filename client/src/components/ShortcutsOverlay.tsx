@@ -9,13 +9,13 @@ interface ShortcutsOverlayProps {
 
 const SHORTCUTS = [
   { key: "V", desc: "Select / Move Tool" },
-  { key: "S", desc: "Selective Tool (Snapseed control points)" },
-  { key: "K", desc: "RGB Tone Curves" },
-  { key: "A", desc: "Tune Image (WB, Structure, Vignette)" },
+  { key: "S", desc: "Selective Control Points" },
+  { key: "K", desc: "Tone Curves (RGB/Channels)" },
+  { key: "A", desc: "Tune Image (Light/Tone/Color/Detail)" },
   { key: "C", desc: "Crop & Straighten" },
-  { key: "F", desc: "Looks & Filters Strip" },
-  { key: "T", desc: "Text Overlay Tool" },
-  { key: "L", desc: "Layers Panel" },
+  { key: "F", desc: "Presets / Looks" },
+  { key: "T", desc: "Text Overlay" },
+  { key: "L", desc: "Layers & Double Exposure" },
   { key: "E", desc: "Export Settings" },
   { key: "Ctrl + Z", desc: "Undo last edit" },
   { key: "Ctrl + Shift + Z", desc: "Redo last edit" },
@@ -36,44 +36,44 @@ const ShortcutsOverlay = memo(function ShortcutsOverlay({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 font-mono select-none"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg bg-[#131418] border border-[#26272b] rounded-xl shadow-2xl p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+        className="w-full max-w-md bg-[#121215] border border-[#222227] rounded-xl shadow-2xl p-5 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-100"
       >
-        <div className="flex items-center justify-between border-b border-[#26272b] pb-3">
+        <div className="flex items-center justify-between border-b border-[#222227] pb-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-[#f0f0ec]">KEYBOARD SHORTCUTS</span>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-[#4b9fef]/15 text-[#4b9fef] border border-[#4b9fef]/30 font-bold">
-              PRO EDITING
+            <span className="text-xs font-semibold tracking-wider text-[#ededed]">KEYBOARD SHORTCUTS</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#3b82f6]/10 text-[#3b82f6] border border-[#3b82f6]/20 font-medium">
+              SHADE
             </span>
           </div>
           <button
             onClick={onClose}
-            className="text-[#9a9d9a] hover:text-[#f0f0ec] text-sm p-1 cursor-pointer"
+            className="text-[#84848d] hover:text-[#ededed] text-xs p-1 cursor-pointer transition-colors"
           >
             ✕
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 max-h-[60vh] overflow-y-auto pr-1">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
           {SHORTCUTS.map((s) => (
             <div
               key={s.key}
-              className="flex items-center justify-between p-2 rounded bg-[#18191e] border border-[#26272b]"
+              className="flex items-center justify-between p-2 rounded bg-[#16161a] border border-[#222227]"
             >
-              <span className="text-xs text-[#9a9d9a] truncate mr-2">{s.desc}</span>
-              <kbd className="px-1.5 py-0.5 text-[11px] font-bold bg-[#26272b] text-[#4b9fef] rounded border border-white/10 shrink-0">
+              <span className="text-[11px] text-[#84848d] truncate mr-2">{s.desc}</span>
+              <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-[#1e1e24] text-[#ededed] rounded border border-white/10 shrink-0">
                 {s.key}
               </kbd>
             </div>
           ))}
         </div>
 
-        <div className="border-t border-[#26272b] pt-3 text-center">
-          <span className="text-[11px] text-[#9a9d9a]">
-            Press <kbd className="text-[#f0f0ec] font-bold">Esc</kbd> or click outside to dismiss
+        <div className="border-t border-[#222227] pt-2.5 text-center">
+          <span className="text-[11px] text-[#5c5c66]">
+            Press <kbd className="text-[#ededed] font-medium">Esc</kbd> or click outside to dismiss
           </span>
         </div>
       </div>

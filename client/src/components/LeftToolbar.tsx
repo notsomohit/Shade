@@ -26,10 +26,10 @@ const LeftToolbar = memo(function LeftToolbar({
       shortcut: "V",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
@@ -42,18 +42,18 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "selective",
-      name: "Selective (Snapseed)",
+      name: "Selective Points",
       shortcut: "S",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <circle cx="12" cy="12" r="8" strokeDasharray="3 3" />
-          <circle cx="12" cy="12" r="3" fill="currentColor" />
+          <circle cx="12" cy="12" r="2.5" fill="currentColor" />
           <path strokeLinecap="round" d="M12 2v2m0 16v2M2 12h2m16 0h2" />
         </svg>
       ),
@@ -64,36 +64,36 @@ const LeftToolbar = memo(function LeftToolbar({
       shortcut: "K",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
-            d="M3 20c4-1 6-12 10-12s5 11 8 12"
+            d="M4 19c3-1 6-13 10-13s4 11 6 13"
           />
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
             d="M3 3v18h18"
-            strokeWidth="1"
+            strokeWidth="1.2"
           />
         </svg>
       ),
     },
     {
       id: "adjust",
-      name: "Tune Image (WB/Str)",
+      name: "Tune Image",
       shortcut: "A",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
@@ -110,10 +110,10 @@ const LeftToolbar = memo(function LeftToolbar({
       shortcut: "C",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
@@ -126,14 +126,14 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "filter",
-      name: "Looks & Filters",
+      name: "Preset Looks",
       shortcut: "F",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
@@ -146,14 +146,14 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "text",
-      name: "Text Overlays",
+      name: "Text Overlay",
       shortcut: "T",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
@@ -166,14 +166,14 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "layers",
-      name: "Layers & Exposure",
+      name: "Layers",
       shortcut: "L",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
@@ -190,10 +190,10 @@ const LeftToolbar = memo(function LeftToolbar({
       shortcut: "E",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-4 h-4"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="1.75"
           viewBox="0 0 24 24"
         >
           <path
@@ -207,8 +207,8 @@ const LeftToolbar = memo(function LeftToolbar({
   ];
 
   return (
-    <aside className="w-[52px] border-r border-[#26272b] bg-[#131418] flex flex-col items-center justify-between py-4 shrink-0 font-mono select-none">
-      <div className="flex flex-col items-center gap-3.5 w-full">
+    <aside className="w-12 border-r border-[#222227] bg-[#121215] flex flex-col items-center justify-between py-3 shrink-0 select-none">
+      <div className="flex flex-col items-center gap-2 w-full">
         {tools.map((tool) => {
           const isActive = activeTool === tool.id;
           return (
@@ -216,19 +216,20 @@ const LeftToolbar = memo(function LeftToolbar({
               <button
                 onClick={() => onSelectTool(tool.id)}
                 className={`
-                  w-9 h-9 rounded flex items-center justify-center transition-colors duration-150 cursor-pointer
+                  w-8 h-8 rounded flex items-center justify-center transition-colors duration-150 cursor-pointer
                   ${
                     isActive
-                      ? "bg-[#4b9fef]/15 text-[#4b9fef]"
-                      : "text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b]/50"
+                      ? "bg-[#1e1e24] text-[#3b82f6] border border-[#2d2d36] shadow-sm"
+                      : "text-[#84848d] hover:text-[#ededed] hover:bg-[#18181c]"
                   }
                 `}
+                title={`${tool.name} (${tool.shortcut})`}
               >
                 {tool.icon}
               </button>
 
-              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 hidden group-hover:block pointer-events-none whitespace-nowrap px-2 py-1 bg-[#131418] text-[#f0f0ec] border border-[#26272b] text-[10px] rounded shadow-md">
-                {tool.name} <span className="text-[#4b9fef]">({tool.shortcut})</span>
+              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 hidden group-hover:block pointer-events-none whitespace-nowrap px-2 py-1 bg-[#16161a] text-[#ededed] border border-[#222227] text-[10px] font-mono rounded shadow-lg">
+                {tool.name} <span className="text-[#3b82f6]">({tool.shortcut})</span>
               </div>
             </div>
           );

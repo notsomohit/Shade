@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useRef, ReactNode, memo } from "react";
+import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
 
 export type ToastType = "info" | "success" | "error";
 
@@ -50,32 +50,32 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* Toast Renderer */}
       <div
         aria-live="polite"
-        className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 items-center pointer-events-none"
+        className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 items-center pointer-events-none"
       >
         {toasts.map((t) => (
           <div
             key={t.id}
             onClick={() => dismiss(t.id)}
             className={`
-              pointer-events-auto flex items-center gap-2.5 px-4 py-2 rounded border text-xs font-mono
+              pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs font-medium
               shadow-2xl select-none cursor-pointer
-              animate-[slideUp_0.18s_ease-out]
+              animate-[slideUp_0.15s_ease-out]
               ${
                 t.type === "error"
-                  ? "bg-[#1a0a0a] border-red-500/40 text-red-300"
+                  ? "bg-[#181113] border-red-500/30 text-red-300"
                   : t.type === "success"
-                  ? "bg-[#0a1a0a] border-green-500/40 text-green-300"
-                  : "bg-[#131418] border-[#26272b] text-[#f0f0ec]"
+                  ? "bg-[#111813] border-emerald-500/30 text-emerald-300"
+                  : "bg-[#16161a] border-[#222227] text-[#ededed]"
               }
             `}
           >
             {t.type === "error" && (
-              <span className="text-red-400 shrink-0">✕</span>
+              <span className="text-red-400 shrink-0 text-xs">✕</span>
             )}
             {t.type === "success" && (
-              <span className="text-green-400 shrink-0">✓</span>
+              <span className="text-emerald-400 shrink-0 text-xs">✓</span>
             )}
-            {t.message}
+            <span>{t.message}</span>
           </div>
         ))}
       </div>
