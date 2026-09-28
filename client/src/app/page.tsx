@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useCanvas, DEFAULT_ADJUSTMENTS, TransformState } from "@/hooks/useCanvas";
 import {
   ToolType,
@@ -12,20 +12,21 @@ import {
   ExportSettings,
   CurvesData,
   SelectivePoint,
-  PhotoPreset,
+  PresetLayer,
 } from "@/types/editor";
 import TopBar from "@/components/TopBar";
 import LeftToolbar from "@/components/LeftToolbar";
 import CenterCanvas from "@/components/CenterCanvas";
 import RightPanel from "@/components/RightPanel";
 import BottomBar from "@/components/BottomBar";
-import FilterPresetsStrip from "@/components/FilterPresetsStrip";
 import ShortcutsOverlay from "@/components/ShortcutsOverlay";
 import { DEFAULT_CURVES } from "@/components/CurvesTool";
 import { useToast } from "@/components/Toast";
+import { calculateEffectiveAdjustments } from "@/constants/presets";
 
 interface HistoryEntry {
   adjustments: Adjustments;
+  presetLayers: PresetLayer[];
   filter: FilterSettings;
   curves: CurvesData;
   selectivePoints: SelectivePoint[];
@@ -71,12 +72,15 @@ export default function Home() {
   const [gridMode, setGridMode] = useState<GridMode>("none");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Panel collapse & shortcuts state
+  // Responsive & Sheet States
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
 
-  // Snapseed Editing States
+  // Snapseed Editing States (Base Adjustments & Stackable Preset Layers)
   const [adjustments, setAdjustments] = useState<Adjustments>({ ...DEFAULT_ADJUSTMENTS });
+  const [presetLayers, setPresetLayers] = useState<PresetLayer[]>([]);
   const [curves, setCurves] = useState<CurvesData>({ ...DEFAULT_CURVES });
   const [selectivePoints, setSelectivePoints] = useState<SelectivePoint[]>([]);
   const [selectedSelectivePointId, setSelectedSelectivePointId] = useState<string | null>(null);
@@ -100,12 +104,36 @@ export default function Home() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
+   * Calculate pure effective adjustments (Base + sum over visible preset layers, strictly clamped)
+   */
+  const effectiveAdjustments = useMemo(() => {
+    return calculateEffectiveAdjustments(adjustments, presetLayers);
+  }, [adjustments, presetLayers]);
+
+  // Sync effective adjustments to canvas pipeline
+  useEffect(() => {
+    updateAdjustments(effectiveAdjustments);
+  }, [effectiveAdjustments, updateAdjustments]);
+
+  // Handle responsive viewport detection (< 640px = Mobile)
+  useEffect(() => {
+    const checkViewport = () => {
+      const mobile = window.innerWidth < 640;
+      setIsMobile(mobile);
+    };
+    checkViewport();
+    window.addEventListener("resize", checkViewport);
+    return () => window.removeEventListener("resize", checkViewport);
+  }, []);
+
+  /**
    * Push an immutable snapshot to Undo history
    */
   const pushHistory = useCallback(
     (newEntry: Partial<HistoryEntry>) => {
       const entry: HistoryEntry = {
         adjustments: newEntry.adjustments ?? adjustments,
+        presetLayers: newEntry.presetLayers ?? presetLayers,
         filter: newEntry.filter ?? filterSettings,
         curves: newEntry.curves ?? curves,
         selectivePoints: newEntry.selectivePoints ?? selectivePoints,
@@ -119,7 +147,16 @@ export default function Home() {
       });
       setHistoryIndex((prev) => prev + 1);
     },
-    [adjustments, filterSettings, curves, selectivePoints, layers, transform, historyIndex]
+    [
+      adjustments,
+      presetLayers,
+      filterSettings,
+      curves,
+      selectivePoints,
+      layers,
+      transform,
+      historyIndex,
+    ]
   );
 
   /**
@@ -129,7 +166,7 @@ export default function Home() {
     if (historyIndex > 0) {
       const prev = history[historyIndex - 1];
       setAdjustments(prev.adjustments);
-      updateAdjustments(prev.adjustments);
+      setPresetLayers(prev.presetLayers || []);
       updateFilter(prev.filter);
       setCurves(prev.curves);
       updateCurves(prev.curves);
@@ -149,7 +186,6 @@ export default function Home() {
   }, [
     history,
     historyIndex,
-    updateAdjustments,
     updateFilter,
     updateCurves,
     updateSelectivePoints,
@@ -165,7 +201,7 @@ export default function Home() {
     if (historyIndex < history.length - 1) {
       const next = history[historyIndex + 1];
       setAdjustments(next.adjustments);
-      updateAdjustments(next.adjustments);
+      setPresetLayers(next.presetLayers || []);
       updateFilter(next.filter);
       setCurves(next.curves);
       updateCurves(next.curves);
@@ -185,7 +221,6 @@ export default function Home() {
   }, [
     history,
     historyIndex,
-    updateAdjustments,
     updateFilter,
     updateCurves,
     updateSelectivePoints,
@@ -219,6 +254,7 @@ export default function Home() {
         ];
 
         setAdjustments({ ...DEFAULT_ADJUSTMENTS });
+        setPresetLayers([]);
         setCurves({ ...DEFAULT_CURVES });
         setSelectivePoints([]);
         setSelectedSelectivePointId(null);
@@ -227,9 +263,10 @@ export default function Home() {
         updateLayers(initialLayers);
         setHasImage(true);
 
-        // Reset history
+        // Reset history with presetLayers snapshot
         const initialEntry: HistoryEntry = {
           adjustments: { ...DEFAULT_ADJUSTMENTS },
+          presetLayers: [],
           filter: { id: "original", name: "Original", intensity: 100 },
           curves: { ...DEFAULT_CURVES },
           selectivePoints: [],
@@ -259,19 +296,81 @@ export default function Home() {
 
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = setTimeout(() => {
-        updateAdjustments(next);
         pushHistory({ adjustments: next });
       }, 100);
     },
-    [adjustments, updateAdjustments, pushHistory]
+    [adjustments, pushHistory]
   );
 
   const handleResetAdjustments = useCallback(() => {
     setAdjustments({ ...DEFAULT_ADJUSTMENTS });
-    updateAdjustments({ ...DEFAULT_ADJUSTMENTS });
     pushHistory({ adjustments: { ...DEFAULT_ADJUSTMENTS } });
-    showToast("Reset all adjustments", "info");
-  }, [updateAdjustments, pushHistory, showToast]);
+    showToast("Reset base adjustments", "info");
+  }, [pushHistory, showToast]);
+
+  /**
+   * Stackable Preset Layers Handlers
+   */
+  const handleAddPresetLayer = useCallback(
+    (presetId: string, name: string) => {
+      if (presetLayers.length >= 6) {
+        showToast("Maximum 6 preset layers reached", "info");
+        return;
+      }
+      const newLayer: PresetLayer = {
+        id: `player_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        presetId,
+        name,
+        amount: 100,
+        visible: true,
+      };
+      const nextLayers = [newLayer, ...presetLayers];
+      setPresetLayers(nextLayers);
+      pushHistory({ presetLayers: nextLayers });
+      showToast(`Added preset layer: ${name}`, "success");
+    },
+    [presetLayers, pushHistory, showToast]
+  );
+
+  const handleUpdatePresetLayerAmount = useCallback(
+    (id: string, amount: number, commit = false) => {
+      const nextLayers = presetLayers.map((l) =>
+        l.id === id ? { ...l, amount } : l
+      );
+      setPresetLayers(nextLayers);
+      if (commit) {
+        pushHistory({ presetLayers: nextLayers });
+      }
+    },
+    [presetLayers, pushHistory]
+  );
+
+  const handleTogglePresetLayerVisibility = useCallback(
+    (id: string) => {
+      const nextLayers = presetLayers.map((l) =>
+        l.id === id ? { ...l, visible: !l.visible } : l
+      );
+      setPresetLayers(nextLayers);
+      pushHistory({ presetLayers: nextLayers });
+    },
+    [presetLayers, pushHistory]
+  );
+
+  const handleDeletePresetLayer = useCallback(
+    (id: string) => {
+      const nextLayers = presetLayers.filter((l) => l.id !== id);
+      setPresetLayers(nextLayers);
+      pushHistory({ presetLayers: nextLayers });
+      showToast("Removed preset layer", "info");
+    },
+    [presetLayers, pushHistory, showToast]
+  );
+
+  const handleClearPresetLayers = useCallback(() => {
+    setPresetLayers([]);
+    pushHistory({ presetLayers: [] });
+    showToast("Cleared all preset layers", "info");
+  }, [pushHistory, showToast]);
 
   /**
    * Tone Curves Change Handler
@@ -308,8 +407,9 @@ export default function Home() {
     updateSelectivePoints(next);
     pushHistory({ selectivePoints: next });
     setActiveTool("selective");
+    if (isMobile) setMobileSheetOpen(true);
     showToast("Added control point", "success");
-  }, [selectivePoints, updateSelectivePoints, pushHistory, showToast]);
+  }, [selectivePoints, updateSelectivePoints, pushHistory, isMobile, showToast]);
 
   const handleAddSelectivePointAt = useCallback(
     (normX: number, normY: number) => {
@@ -328,9 +428,10 @@ export default function Home() {
       setSelectedSelectivePointId(newPt.id);
       updateSelectivePoints(next);
       pushHistory({ selectivePoints: next });
+      if (isMobile) setMobileSheetOpen(true);
       showToast(`Placed pin at ${Math.round(normX * 100)}%, ${Math.round(normY * 100)}%`, "info");
     },
-    [selectivePoints, updateSelectivePoints, pushHistory, showToast]
+    [selectivePoints, updateSelectivePoints, pushHistory, isMobile, showToast]
   );
 
   const handleUpdateSelectivePoint = useCallback(
@@ -376,7 +477,6 @@ export default function Home() {
           tint: result.tint,
         };
         setAdjustments(next);
-        updateAdjustments(next);
         pushHistory({ adjustments: next });
         showToast(
           `WB calibrated (Temp: ${result.temperature > 0 ? "+" : ""}${result.temperature}, Tint: ${result.tint > 0 ? "+" : ""}${result.tint})`,
@@ -386,61 +486,7 @@ export default function Home() {
         showToast("Area too bright or dark to calibrate WB", "info");
       }
     },
-    [samplePixelWhiteBalance, adjustments, updateAdjustments, pushHistory, showToast]
-  );
-
-  /**
-   * Non-destructive Professional Photo Preset Handler (with optional intensity scaling)
-   */
-  const handleApplyPreset = useCallback(
-    (preset: PhotoPreset, intensity: number = 100) => {
-      const factor = intensity / 100;
-      const base = DEFAULT_ADJUSTMENTS;
-      const target = preset.adjustments;
-
-      const nextAdj: Adjustments = {
-        exposure: Math.round(base.exposure + (target.exposure - base.exposure) * factor),
-        brightness: Math.round(base.brightness + (target.brightness - base.brightness) * factor),
-        contrast: Math.round(base.contrast + (target.contrast - base.contrast) * factor),
-        highlights: Math.round(base.highlights + (target.highlights - base.highlights) * factor),
-        shadows: Math.round(base.shadows + (target.shadows - base.shadows) * factor),
-        whites: Math.round(base.whites + (target.whites - base.whites) * factor),
-        blacks: Math.round(base.blacks + (target.blacks - base.blacks) * factor),
-        saturation: Math.round(base.saturation + (target.saturation - base.saturation) * factor),
-        vibrance: Math.round(base.vibrance + (target.vibrance - base.vibrance) * factor),
-        temperature: Math.round(base.temperature + (target.temperature - base.temperature) * factor),
-        tint: Math.round(base.tint + (target.tint - base.tint) * factor),
-        sharpness: Math.round(base.sharpness + (target.sharpness - base.sharpness) * factor),
-        clarity: Math.round(base.clarity + (target.clarity - base.clarity) * factor),
-        blur: Math.round(base.blur + (target.blur - base.blur) * factor),
-        grain: Math.round(base.grain + (target.grain - base.grain) * factor),
-        vignette: Math.round(base.vignette + (target.vignette - base.vignette) * factor),
-      };
-
-      const nextCurves: CurvesData = preset.curves || curves;
-      const nextFilter: FilterSettings = {
-        id: preset.id,
-        name: preset.name,
-        intensity: 100,
-      };
-
-      setAdjustments(nextAdj);
-      updateAdjustments(nextAdj);
-      if (preset.curves) {
-        setCurves(nextCurves);
-        updateCurves(nextCurves);
-      }
-      updateFilter(nextFilter);
-
-      pushHistory({
-        adjustments: nextAdj,
-        curves: preset.curves ? nextCurves : undefined,
-        filter: nextFilter,
-      });
-
-      showToast(`Applied preset: ${preset.name}`, "success");
-    },
-    [curves, updateAdjustments, updateCurves, updateFilter, pushHistory, showToast]
+    [samplePixelWhiteBalance, adjustments, pushHistory, showToast]
   );
 
   /**
@@ -704,7 +750,7 @@ export default function Home() {
     if (dataUrl) {
       const ext = exportSettings.format.split("/")[1];
       const link = document.createElement("a");
-      link.download = `studionorth-edit.${ext}`;
+      link.download = `shade-edit.${ext}`;
       link.href = dataUrl;
       link.click();
       showToast(`Exported as ${ext.toUpperCase()}`, "success");
@@ -735,6 +781,7 @@ export default function Home() {
         setIsEyedropperActive(false);
         setSelectedLayerId(null);
         setSelectedSelectivePointId(null);
+        setMobileSheetOpen(false);
         return;
       }
 
@@ -775,34 +822,42 @@ export default function Home() {
         case "s":
           setActiveTool("selective");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "k":
           setActiveTool("curves");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "a":
           setActiveTool("adjust");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "c":
           setActiveTool("crop");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "f":
           setActiveTool("filter");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "t":
           setActiveTool("text");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "l":
           setActiveTool("layers");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "e":
           setActiveTool("export");
           setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
           break;
         case "0":
           handleZoomFit();
@@ -831,15 +886,22 @@ export default function Home() {
     handleResetZoom,
     handleZoomIn,
     handleZoomOut,
+    isMobile,
   ]);
 
-  const handleSelectTool = useCallback((tool: ToolType) => {
-    setActiveTool(tool);
-    setRightPanelCollapsed(false);
-  }, []);
+  const handleSelectTool = useCallback(
+    (tool: ToolType) => {
+      setActiveTool(tool);
+      setRightPanelCollapsed(false);
+      if (isMobile) {
+        setMobileSheetOpen(tool !== "select");
+      }
+    },
+    [isMobile]
+  );
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0e0f12] text-[#f0f0ec] overflow-hidden font-mono antialiased">
+    <div className="flex flex-col h-full h-[100dvh] w-screen bg-[var(--bg-app)] text-[var(--text)] overflow-hidden select-none antialiased">
       {/* Top Header Bar */}
       <TopBar
         hasImage={hasImage}
@@ -860,8 +922,10 @@ export default function Home() {
 
       {/* Main Studio Workspace */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Vertical Tool Selector */}
-        <LeftToolbar activeTool={activeTool} onSelectTool={handleSelectTool} />
+        {/* Left Vertical Tool Selector (Desktop >= 640px, or Phone Landscape) */}
+        {!isMobile && (
+          <LeftToolbar activeTool={activeTool} onSelectTool={handleSelectTool} />
+        )}
 
         {/* Center Interactive Canvas */}
         <CenterCanvas
@@ -885,6 +949,7 @@ export default function Home() {
               const l = layers.find((item) => item.id === id);
               if (l?.type === "text") setActiveTool("text");
               setRightPanelCollapsed(false);
+              if (isMobile) setMobileSheetOpen(true);
             }
           }}
           onSelectSelectivePoint={setSelectedSelectivePointId}
@@ -900,7 +965,82 @@ export default function Home() {
           renderPipeline={renderPipeline}
         />
 
-        {/* Right Collapsible Adjustments / Tools Panel */}
+        {/* Right Adjustment / Tool Panel (Desktop >= 640px) */}
+        {!isMobile && (
+          <RightPanel
+            activeTool={activeTool}
+            adjustments={adjustments}
+            onChangeAdjustment={handleChangeAdjustment}
+            onResetAdjustments={handleResetAdjustments}
+            curves={curves}
+            onChangeCurves={handleChangeCurves}
+            selectivePoints={selectivePoints}
+            selectedSelectivePointId={selectedSelectivePointId}
+            onSelectSelectivePoint={setSelectedSelectivePointId}
+            onAddSelectivePoint={handleAddSelectivePoint}
+            onUpdateSelectivePoint={handleUpdateSelectivePoint}
+            onDeleteSelectivePoint={handleDeleteSelectivePoint}
+            isEyedropperActive={isEyedropperActive}
+            onToggleEyedropper={() => setIsEyedropperActive((prev) => !prev)}
+            presetLayers={presetLayers}
+            onAddPresetLayer={handleAddPresetLayer}
+            onUpdatePresetLayerAmount={handleUpdatePresetLayerAmount}
+            onTogglePresetLayerVisibility={handleTogglePresetLayerVisibility}
+            onDeletePresetLayer={handleDeletePresetLayer}
+            onClearPresetLayers={handleClearPresetLayers}
+            transformState={transform}
+            onUpdateTransform={handleUpdateTransform}
+            onResetCrop={handleResetCrop}
+            onApplyCrop={() => {
+              if (transform.crop) {
+                handleApplyCrop(transform.crop);
+              }
+            }}
+            layers={layers}
+            selectedLayerId={selectedLayerId}
+            onSelectLayer={setSelectedLayerId}
+            onToggleLayerVisibility={handleToggleLayerVisibility}
+            onDeleteLayer={handleDeleteLayer}
+            onDuplicateLayer={handleDuplicateLayer}
+            onRenameLayer={handleRenameLayer}
+            onReorderLayers={handleReorderLayers}
+            onAddDoubleExposureLayer={handleAddDoubleExposureLayer}
+            onUpdateDoubleExposureLayer={handleUpdateDoubleExposureLayer}
+            onAddTextLayer={handleAddTextLayer}
+            onUpdateTextLayer={handleUpdateTextLayer}
+            exportSettings={exportSettings}
+            onChangeExportSettings={setExportSettings}
+            onTriggerExport={handleTriggerExport}
+            collapsed={rightPanelCollapsed}
+            onToggleCollapsed={() => setRightPanelCollapsed((prev) => !prev)}
+            hasImage={hasImage}
+          />
+        )}
+      </div>
+
+      {/* Bottom Status & Zoom Bar */}
+      <BottomBar
+        zoom={zoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetZoom={handleResetZoom}
+        onZoomFit={handleZoomFit}
+        imageData={imageData}
+        hasImage={hasImage}
+        isProcessing={isProcessing}
+      />
+
+      {/* Mobile Horizontal Bottom Toolbar (< 640px) */}
+      {isMobile && (
+        <LeftToolbar
+          activeTool={activeTool}
+          onSelectTool={handleSelectTool}
+          isMobileBottomBar={true}
+        />
+      )}
+
+      {/* Mobile Responsive Bottom Sheet (< 640px) */}
+      {isMobile && mobileSheetOpen && (
         <RightPanel
           activeTool={activeTool}
           adjustments={adjustments}
@@ -916,17 +1056,16 @@ export default function Home() {
           onDeleteSelectivePoint={handleDeleteSelectivePoint}
           isEyedropperActive={isEyedropperActive}
           onToggleEyedropper={() => setIsEyedropperActive((prev) => !prev)}
-          filterSettings={filterSettings}
-          onChangeFilter={(f) => {
-            updateFilter(f);
-            pushHistory({ filter: f });
-          }}
-          onApplyPreset={handleApplyPreset}
+          presetLayers={presetLayers}
+          onAddPresetLayer={handleAddPresetLayer}
+          onUpdatePresetLayerAmount={handleUpdatePresetLayerAmount}
+          onTogglePresetLayerVisibility={handleTogglePresetLayerVisibility}
+          onDeletePresetLayer={handleDeletePresetLayer}
+          onClearPresetLayers={handleClearPresetLayers}
           transformState={transform}
           onUpdateTransform={handleUpdateTransform}
           onResetCrop={handleResetCrop}
           onApplyCrop={() => {
-            // Can be triggered from panel
             if (transform.crop) {
               handleApplyCrop(transform.crop);
             }
@@ -946,30 +1085,11 @@ export default function Home() {
           exportSettings={exportSettings}
           onChangeExportSettings={setExportSettings}
           onTriggerExport={handleTriggerExport}
-          collapsed={rightPanelCollapsed}
-          onToggleCollapsed={() => setRightPanelCollapsed((prev) => !prev)}
-        />
-      </div>
-
-      {/* Preset Looks Strip (when filter tool or looks active) */}
-      {hasImage && activeTool === "filter" && (
-        <FilterPresetsStrip
-          selectedPresetId={filterSettings.id}
-          onSelectPreset={handleApplyPreset}
+          hasImage={hasImage}
+          isMobileSheet={true}
+          onCloseMobileSheet={() => setMobileSheetOpen(false)}
         />
       )}
-
-      {/* Bottom Status & Zoom Bar */}
-      <BottomBar
-        zoom={zoom}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onResetZoom={handleResetZoom}
-        onZoomFit={handleZoomFit}
-        imageData={imageData}
-        hasImage={hasImage}
-        isProcessing={isProcessing}
-      />
 
       {/* Keyboard Shortcuts Cheat Sheet Modal */}
       <ShortcutsOverlay

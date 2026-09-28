@@ -6,11 +6,13 @@ import { ToolType } from "@/types/editor";
 interface LeftToolbarProps {
   activeTool: ToolType;
   onSelectTool: (tool: ToolType) => void;
+  isMobileBottomBar?: boolean;
 }
 
 interface ToolItem {
   id: ToolType;
   name: string;
+  label: string;
   shortcut: string;
   icon: React.ReactNode;
 }
@@ -18,15 +20,17 @@ interface ToolItem {
 const LeftToolbar = memo(function LeftToolbar({
   activeTool,
   onSelectTool,
+  isMobileBottomBar = false,
 }: LeftToolbarProps) {
   const tools: ToolItem[] = [
     {
       id: "select",
       name: "Select / Move",
+      label: "Select",
       shortcut: "V",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-5 h-5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -41,56 +45,13 @@ const LeftToolbar = memo(function LeftToolbar({
       ),
     },
     {
-      id: "selective",
-      name: "Selective (Snapseed)",
-      shortcut: "S",
-      icon: (
-        <svg
-          className="w-4.5 h-4.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-        >
-          <circle cx="12" cy="12" r="8" strokeDasharray="3 3" />
-          <circle cx="12" cy="12" r="3" fill="currentColor" />
-          <path strokeLinecap="round" d="M12 2v2m0 16v2M2 12h2m16 0h2" />
-        </svg>
-      ),
-    },
-    {
-      id: "curves",
-      name: "Tone Curves",
-      shortcut: "K",
-      icon: (
-        <svg
-          className="w-4.5 h-4.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M3 20c4-1 6-12 10-12s5 11 8 12"
-          />
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M3 3v18h18"
-            strokeWidth="1"
-          />
-        </svg>
-      ),
-    },
-    {
       id: "adjust",
-      name: "Tune Image (WB/Str)",
+      name: "Tune Image",
+      label: "Tune",
       shortcut: "A",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-5 h-5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -105,12 +66,59 @@ const LeftToolbar = memo(function LeftToolbar({
       ),
     },
     {
+      id: "selective",
+      name: "Selective Points",
+      label: "Selective",
+      shortcut: "S",
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <circle cx="12" cy="12" r="8" strokeDasharray="3 3" />
+          <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+          <path strokeLinecap="round" d="M12 2v2m0 16v2M2 12h2m16 0h2" />
+        </svg>
+      ),
+    },
+    {
+      id: "curves",
+      name: "Tone Curves",
+      label: "Curves",
+      shortcut: "K",
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M4 19c3-1 6-13 10-13s4 11 6 13"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M3 3v18h18"
+            strokeWidth="1.2"
+          />
+        </svg>
+      ),
+    },
+    {
       id: "crop",
       name: "Crop & Straighten",
+      label: "Crop",
       shortcut: "C",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-5 h-5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -126,11 +134,12 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "filter",
-      name: "Looks & Filters",
+      name: "Preset Looks",
+      label: "Presets",
       shortcut: "F",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-5 h-5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -146,11 +155,12 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "text",
-      name: "Text Overlays",
+      name: "Text Overlay",
+      label: "Text",
       shortcut: "T",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-5 h-5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -166,11 +176,12 @@ const LeftToolbar = memo(function LeftToolbar({
     },
     {
       id: "layers",
-      name: "Layers & Exposure",
+      name: "Layers",
+      label: "Layers",
       shortcut: "L",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-5 h-5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -187,10 +198,11 @@ const LeftToolbar = memo(function LeftToolbar({
     {
       id: "export",
       name: "Export",
+      label: "Export",
       shortcut: "E",
       icon: (
         <svg
-          className="w-4.5 h-4.5"
+          className="w-5 h-5"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -206,29 +218,76 @@ const LeftToolbar = memo(function LeftToolbar({
     },
   ];
 
-  return (
-    <aside className="w-[52px] border-r border-[#26272b] bg-[#131418] flex flex-col items-center justify-between py-4 shrink-0 font-mono select-none">
-      <div className="flex flex-col items-center gap-3.5 w-full">
-        {tools.map((tool) => {
-          const isActive = activeTool === tool.id;
-          return (
-            <div key={tool.id} className="relative group">
+  // Mobile horizontal toolbar rendering (< 640px)
+  if (isMobileBottomBar) {
+    return (
+      <nav
+        className="w-full bg-[var(--bg-panel)] border-t border-[var(--border)] flex items-center overflow-x-auto pb-[env(safe-area-inset-bottom)] scrollbar-none snap-x select-none z-30 shrink-0"
+        style={{ touchAction: "pan-x" }}
+      >
+        <div className="flex items-center gap-1 px-2 py-1.5 min-w-full justify-around sm:justify-start">
+          {tools.map((tool) => {
+            const isActive = activeTool === tool.id;
+            return (
               <button
+                key={tool.id}
                 onClick={() => onSelectTool(tool.id)}
                 className={`
-                  w-9 h-9 rounded flex items-center justify-center transition-colors duration-150 cursor-pointer
+                  flex flex-col items-center justify-center min-w-[56px] h-12 rounded px-1.5 transition-colors cursor-pointer relative shrink-0
                   ${
                     isActive
-                      ? "bg-[#4b9fef]/15 text-[#4b9fef]"
-                      : "text-[#9a9d9a] hover:text-[#f0f0ec] hover:bg-[#26272b]/50"
+                      ? "text-[var(--accent)] bg-[var(--accent-soft)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text)] active:bg-[var(--bg-elevated)]"
                   }
                 `}
               >
-                {tool.icon}
+                {isActive && (
+                  <div className="absolute top-0 left-2 right-2 h-[2px] bg-[var(--accent)] rounded-full" />
+                )}
+                <div className="w-5 h-5 flex items-center justify-center">{tool.icon}</div>
+                <span className="text-[10px] font-medium tracking-tight mt-0.5">{tool.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    );
+  }
+
+  // Desktop (~76px width) & Tablet / Landscape slim vertical toolbar
+  return (
+    <aside className="w-14 lg:w-[76px] border-r border-[var(--border)] bg-[var(--bg-panel)] flex flex-col items-center justify-between py-3 shrink-0 select-none z-20">
+      <div className="flex flex-col items-center gap-1.5 w-full">
+        {tools.map((tool) => {
+          const isActive = activeTool === tool.id;
+          return (
+            <div key={tool.id} className="relative group w-full flex justify-center">
+              <button
+                onClick={() => onSelectTool(tool.id)}
+                className={`
+                  w-11 h-11 lg:w-12 lg:h-12 rounded flex flex-col items-center justify-center transition-all duration-150 cursor-pointer relative
+                  ${
+                    isActive
+                      ? "bg-[var(--accent-soft)] text-[var(--accent)] shadow-sm font-semibold"
+                      : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-elevated)]"
+                  }
+                `}
+                title={`${tool.name} (${tool.shortcut})`}
+              >
+                {/* 3px blue bar on left edge for active tool */}
+                {isActive && (
+                  <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-[var(--accent)] rounded-r" />
+                )}
+
+                <div className="w-5 h-5 flex items-center justify-center">{tool.icon}</div>
+                <span className="text-[9px] font-medium tracking-tight hidden lg:block mt-0.5">
+                  {tool.label}
+                </span>
               </button>
 
-              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 hidden group-hover:block pointer-events-none whitespace-nowrap px-2 py-1 bg-[#131418] text-[#f0f0ec] border border-[#26272b] text-[10px] rounded shadow-md">
-                {tool.name} <span className="text-[#4b9fef]">({tool.shortcut})</span>
+              {/* Desktop Hover Tooltip */}
+              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 hidden group-hover:block pointer-events-none whitespace-nowrap px-2 py-1 bg-[var(--bg-elevated)] text-[var(--text)] border border-[var(--border)] text-[11px] font-sans rounded shadow-xl">
+                {tool.name} <span className="text-[var(--accent)] font-mono font-bold">({tool.shortcut})</span>
               </div>
             </div>
           );

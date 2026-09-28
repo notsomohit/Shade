@@ -19,7 +19,7 @@ export default function ImageUploader({ onImageSelect }: ImageUploaderProps) {
       setError(null);
 
       if (!ACCEPTED_TYPES.includes(file.type)) {
-        setError("Unsupported format. Use JPEG, PNG, WebP, or AVIF.");
+        setError("Unsupported format. Use JPG, PNG, WEBP, or AVIF.");
         return;
       }
 
@@ -78,34 +78,35 @@ export default function ImageUploader({ onImageSelect }: ImageUploaderProps) {
 
   return (
     <div
-      className={`
-        flex flex-1 items-center justify-center p-4 sm:p-8
-        transition-colors duration-200
-      `}
+      className="flex flex-1 items-center justify-center p-4 sm:p-8 select-none"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
       <div
+        style={{
+          border: "1.5px dashed rgba(255, 255, 255, 0.85)",
+          borderRadius: "6px",
+        }}
         className={`
-          w-full max-w-lg rounded-2xl border-2 border-dashed p-8 sm:p-12
-          text-center transition-all duration-200 cursor-pointer
+          w-full max-w-[450px] p-8 sm:p-10
+          text-center transition-all duration-150 cursor-pointer flex flex-col items-center justify-center gap-4
           ${
             isDragging
-              ? "border-indigo-400 bg-indigo-500/10 scale-[1.02]"
-              : "border-white/10 hover:border-white/20 bg-white/[0.02] hover:bg-white/[0.04]"
+              ? "bg-[var(--accent-soft)]/20 scale-[1.01]"
+              : "bg-[var(--bg-panel)]/40 hover:bg-[var(--bg-panel)]/80"
           }
         `}
         onClick={() => fileInputRef.current?.click()}
       >
-        {/* Upload icon */}
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-500/10">
+        {/* ~80px circular dark-navy icon container with blue upload arrow */}
+        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#101726] border border-[#1e2d4a] flex items-center justify-center text-[var(--accent)] shrink-0 shadow-inner">
           <svg
-            className="h-8 w-8 text-indigo-400"
+            className="w-7 h-7 sm:w-8 sm:h-8"
             fill="none"
             viewBox="0 0 24 24"
-            strokeWidth={1.5}
+            strokeWidth={1.75}
             stroke="currentColor"
           >
             <path
@@ -116,20 +117,21 @@ export default function ImageUploader({ onImageSelect }: ImageUploaderProps) {
           </svg>
         </div>
 
-        <h2 className="text-xl sm:text-2xl font-semibold mb-2">
-          {isDragging ? "Drop your image here" : "Upload an image"}
-        </h2>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm sm:text-base font-bold text-[var(--text)] tracking-tight">
+            Drop your photo here
+          </h2>
+          <p className="text-xs text-[var(--text-muted)]">
+            or click to browse from your device
+          </p>
+        </div>
 
-        <p className="text-sm text-foreground/50 mb-6">
-          Drag & drop or click to browse
-        </p>
-
-        <p className="text-xs text-foreground/30">
-          JPEG, PNG, WebP, AVIF — up to 50MB
-        </p>
+        <div className="px-3 py-1 rounded-full bg-[var(--accent-soft)] border border-[var(--accent)]/30 text-[10px] font-mono text-[var(--accent)] tracking-wider">
+          JPG, PNG, WEBP, AVIF supported
+        </div>
 
         {error && (
-          <p className="mt-4 text-sm text-red-400 font-medium">{error}</p>
+          <p className="mt-2 text-xs text-red-400 font-medium">{error}</p>
         )}
 
         <input

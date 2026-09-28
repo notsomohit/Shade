@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useState } from "react";
-import { PhotoPreset, PresetCategory } from "@/types/editor";
+import { PhotoPreset } from "@/types/editor";
 import { PHOTO_PRESETS, PRESET_CATEGORIES } from "@/constants/presets";
 
 interface FilterPresetsStripProps {
@@ -21,30 +21,30 @@ const FilterPresetsStrip = memo(function FilterPresetsStrip({
       : PHOTO_PRESETS.filter((p) => p.category === activeCategory);
 
   return (
-    <div className="h-28 border-t border-[#26272b] bg-[#131418] px-4 flex flex-col justify-center gap-2 shrink-0 select-none">
+    <div className="h-26 border-t border-[#222227] bg-[#121215] px-4 flex flex-col justify-center gap-2 shrink-0 select-none">
       {/* Category Pills & Info */}
-      <div className="flex items-center justify-between gap-4 overflow-x-auto">
+      <div className="flex items-center justify-between gap-3 overflow-x-auto">
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] text-[#f0f0ec] font-mono font-bold tracking-wider">
+          <span className="text-xs font-semibold text-[#ededed]">
             PRESETS
           </span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#4b9fef]/10 text-[#4b9fef] font-mono font-bold border border-[#4b9fef]/20">
-            NON-DESTRUCTIVE
+          <span className="text-[10px] text-[#5c5c66]">
+            Non-destructive
           </span>
         </div>
 
         {/* Category Filter Chips */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           {PRESET_CATEGORIES.map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
               className={`
-                px-2.5 py-0.5 text-[10px] font-mono rounded-full border transition-colors cursor-pointer
+                px-2.5 py-0.5 text-[11px] rounded-full border transition-colors cursor-pointer
                 ${
                   activeCategory === cat
-                    ? "bg-[#4b9fef] text-black border-[#4b9fef] font-bold"
-                    : "bg-[#18191e] text-[#9a9d9a] border-[#26272b] hover:text-[#f0f0ec]"
+                    ? "bg-[#3b82f6] text-white border-[#3b82f6] font-medium"
+                    : "bg-[#16161a] text-[#84848d] border-[#222227] hover:text-[#ededed] hover:border-[#2d2d34]"
                 }
               `}
             >
@@ -55,7 +55,7 @@ const FilterPresetsStrip = memo(function FilterPresetsStrip({
       </div>
 
       {/* Horizontal Presets Thumbnails Strip */}
-      <div className="flex items-center gap-3 overflow-x-auto py-1 scrollbar-thin">
+      <div className="flex items-center gap-2.5 overflow-x-auto py-0.5">
         {filteredPresets.map((preset) => {
           const isSelected = selectedPresetId === preset.id;
           return (
@@ -67,27 +67,27 @@ const FilterPresetsStrip = memo(function FilterPresetsStrip({
             >
               <div
                 className={`
-                  w-20 h-11 rounded-md bg-gradient-to-br ${preset.previewBg || "from-slate-700 to-slate-900"} transition-all duration-200 border flex items-end p-1 relative overflow-hidden shadow-md
+                  w-18 h-10 rounded bg-gradient-to-br ${preset.previewBg || "from-slate-700 to-slate-900"} transition-all duration-150 border flex items-end p-1 relative overflow-hidden shadow-sm
                   ${
                     isSelected
-                      ? "border-[#4b9fef] ring-2 ring-[#4b9fef] scale-[1.03]"
-                      : "border-[#26272b] group-hover:border-[#9a9d9a] group-hover:scale-[1.02]"
+                      ? "border-[#3b82f6] ring-1 ring-[#3b82f6]"
+                      : "border-[#222227] group-hover:border-[#2d2d34]"
                   }
                 `}
               >
-                <span className="text-[8px] font-mono font-bold px-1 py-0.2 rounded bg-black/70 text-[#f0f0ec] backdrop-blur-sm tracking-wider border border-white/10">
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-black/70 text-[#ededed] tracking-wide border border-white/10">
                   {preset.tag || "LOOK"}
                 </span>
 
                 {isSelected && (
-                  <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[#4b9fef]" />
+                  <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#3b82f6]" />
                 )}
               </div>
               <span
-                className={`text-[11px] font-mono transition-colors truncate max-w-[84px] text-center ${
+                className={`text-[10px] transition-colors truncate max-w-[76px] text-center ${
                   isSelected
-                    ? "text-[#4b9fef] font-bold"
-                    : "text-[#9a9d9a] group-hover:text-[#f0f0ec]"
+                    ? "text-[#3b82f6] font-medium"
+                    : "text-[#84848d] group-hover:text-[#ededed]"
                 }`}
               >
                 {preset.name}

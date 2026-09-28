@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
@@ -14,12 +14,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StudioNorth — Photo Editor",
+  title: "SHADE — Professional Photo Editor",
   description:
-    "A browser-based photo editing app with non-destructive adjustments, LUT filters, crop, text overlays, and PNG/JPEG export.",
+    "A clean, professional dark photo editor with non-destructive adjustments, tone curves, selective control points, presets, and high-resolution export.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0b0d12",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
@@ -33,7 +44,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="h-full min-h-[100dvh] flex flex-col bg-[var(--bg-app)] text-[var(--text)] overflow-hidden">
         <ToastProvider>
           {children}
         </ToastProvider>

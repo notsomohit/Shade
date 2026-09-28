@@ -130,6 +130,14 @@ export interface LayerItem {
   doubleExposureData?: DoubleExposureData;
 }
 
+export interface PresetLayer {
+  id: string;
+  presetId: string;
+  name: string;
+  amount: number; // 0 to 100, default 100
+  visible: boolean;
+}
+
 export interface ImageMetaData {
   name: string;
   width: number;
@@ -141,3 +149,4 @@ export interface ExportSettings {
   format: "image/png" | "image/jpeg" | "image/webp";
   quality: number; // 0.1 to 1.0
 }
+
