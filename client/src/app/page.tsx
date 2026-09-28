@@ -287,25 +287,49 @@ export default function Home() {
   );
 
   /**
-   * Adjustment change handler with fast debounced render pipeline
+   * Adjustment change handler with fast debounced render pipeline or immediate commit for editable value boxes
    */
   const handleChangeAdjustment = useCallback(
-    (key: keyof Adjustments, value: number) => {
-      const next = { ...adjustments, [key]: value };
-      setAdjustments(next);
-
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = setTimeout(() => {
-        pushHistory({ adjustments: next });
-      }, 100);
+    (key: keyof Adjustments, value: number, commit = false) => {
+      setAdjustments((prev) => {
+        const next = { ...prev, [key]: value };
+        if (commit) {
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+          pushHistory({ adjustments: next });
+        } else {
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = setTimeout(() => {
+            pushHistory({ adjustments: next });
+          }, 100);
+        }
+        return next;
+      });
     },
-    [adjustments, pushHistory]
+    [pushHistory]
+  );
+
+  /**
+   * Section Reset Handler: resets specified base adjustment keys atomically in a single undo step
+   */
+  const handleResetSection = useCallback(
+    (keys: (keyof Adjustments)[]) => {
+      setAdjustments((prev) => {
+        const next = { ...prev };
+        for (const key of keys) {
+          next[key] = DEFAULT_ADJUSTMENTS[key] ?? 0;
+        }
+        pushHistory({ adjustments: next });
+        return next;
+      });
+      showToast("Reset section adjustments", "info");
+    },
+    [pushHistory, showToast]
   );
 
   const handleResetAdjustments = useCallback(() => {
     setAdjustments({ ...DEFAULT_ADJUSTMENTS });
     pushHistory({ adjustments: { ...DEFAULT_ADJUSTMENTS } });
-    showToast("Reset base adjustments", "info");
+    showToast("Reset all base adjustments", "info");
   }, [pushHistory, showToast]);
 
   /**
@@ -574,7 +598,7 @@ export default function Home() {
   );
 
   /**
-   * Text Layer Handlers
+   * Text Layer Handlers (Stored in image-normalized units)
    */
   const handleAddTextLayer = useCallback(
     (
@@ -584,6 +608,9 @@ export default function Home() {
       fontFamily: string,
       category: "standard" | "design" | "artsy" | "display"
     ) => {
+      // Store font size as fraction of image height (0.015 to 0.4, default ~0.06 = ~48px on 800px image)
+      const normFontSize = fontSize > 1 ? fontSize / 800 : fontSize;
+
       const newTextLayer: LayerItem = {
         id: `text_${Date.now()}`,
         name: `Text: ${text.slice(0, 12)}`,
@@ -592,7 +619,7 @@ export default function Home() {
         textData: {
           id: `t_${Date.now()}`,
           text,
-          fontSize,
+          fontSize: normFontSize,
           color,
           fontFamily,
           fontCategory: category,
@@ -622,7 +649,16 @@ export default function Home() {
           ? {
               ...l,
               name: updates.text ? `Text: ${updates.text.slice(0, 12)}` : l.name,
-              textData: { ...l.textData, ...updates },
+              textData: {
+                ...l.textData,
+                ...updates,
+                fontSize:
+                  updates.fontSize !== undefined
+                    ? updates.fontSize > 1
+                      ? updates.fontSize / 800
+                      : updates.fontSize
+                    : l.textData.fontSize,
+              },
             }
           : l
       );
@@ -647,9 +683,10 @@ export default function Home() {
 
   const handleUpdateTextFontSize = useCallback(
     (id: string, fontSize: number) => {
+      const normFontSize = fontSize > 1 ? fontSize / 800 : fontSize;
       const next = layers.map((l) =>
         l.id === id && l.textData
-          ? { ...l, textData: { ...l.textData, fontSize } }
+          ? { ...l, textData: { ...l.textData, fontSize: normFontSize } }
           : l
       );
       setLayers(next);
@@ -739,23 +776,34 @@ export default function Home() {
   const handleZoomFit = useCallback(() => setZoom(85), []);
 
   /**
-   * Export Handler
+   * Export Handler with font load waiting
    */
-  const handleTriggerExport = useCallback(() => {
+  const handleTriggerExport = useCallback(async () => {
     if (!hasImage) return;
     setIsProcessing(true);
-    const dataUrl = exportImage(exportSettings.format, exportSettings.quality);
-    setIsProcessing(false);
-
-    if (dataUrl) {
-      const ext = exportSettings.format.split("/")[1];
-      const link = document.createElement("a");
-      link.download = `shade-edit.${ext}`;
-      link.href = dataUrl;
-      link.click();
-      showToast(`Exported as ${ext.toUpperCase()}`, "success");
-    } else {
+    try {
+      if (typeof document !== "undefined" && document.fonts) {
+        try {
+          await document.fonts.ready;
+        } catch {
+          // ignore font loading error
+        }
+      }
+      const dataUrl = await exportImage(exportSettings.format, exportSettings.quality);
+      if (dataUrl) {
+        const ext = exportSettings.format.split("/")[1];
+        const link = document.createElement("a");
+        link.download = `shade-edit.${ext}`;
+        link.href = dataUrl;
+        link.click();
+        showToast(`Exported as ${ext.toUpperCase()}`, "success");
+      } else {
+        showToast("Export failed", "error");
+      }
+    } catch {
       showToast("Export failed", "error");
+    } finally {
+      setIsProcessing(false);
     }
   }, [hasImage, exportImage, exportSettings, showToast]);
 
@@ -972,6 +1020,7 @@ export default function Home() {
             adjustments={adjustments}
             onChangeAdjustment={handleChangeAdjustment}
             onResetAdjustments={handleResetAdjustments}
+            onResetSection={handleResetSection}
             curves={curves}
             onChangeCurves={handleChangeCurves}
             selectivePoints={selectivePoints}
@@ -1046,6 +1095,7 @@ export default function Home() {
           adjustments={adjustments}
           onChangeAdjustment={handleChangeAdjustment}
           onResetAdjustments={handleResetAdjustments}
+          onResetSection={handleResetSection}
           curves={curves}
           onChangeCurves={handleChangeCurves}
           selectivePoints={selectivePoints}

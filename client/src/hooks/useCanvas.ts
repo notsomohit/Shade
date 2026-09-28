@@ -229,33 +229,30 @@ export function useCanvas() {
       adjCtx.putImageData(imageData, 0, 0);
     }
 
-    // Layer compositing
-    const currentLayers = layersRef.current;
-    if (currentLayers.length === 0) {
-      ctx.drawImage(adjCanvas, 0, 0);
-    } else {
-      for (let i = currentLayers.length - 1; i >= 0; i--) {
-        const layer = currentLayers[i];
-        if (!layer.visible) continue;
+    // Always draw base edited photo first
+    ctx.drawImage(adjCanvas, 0, 0);
 
-        if (layer.type === "image") {
-          ctx.drawImage(adjCanvas, 0, 0);
-        } else if (layer.type === "double-exposure" && layer.doubleExposureData) {
-          const de = layer.doubleExposureData;
-          let deImg = doubleExposureImagesRef.current.get(de.imageUrl);
-          if (!deImg) {
-            deImg = new Image();
-            deImg.crossOrigin = "anonymous";
-            deImg.src = de.imageUrl;
-            deImg.onload = () => executeRender();
-            doubleExposureImagesRef.current.set(de.imageUrl, deImg);
-          } else if (deImg.complete) {
-            ctx.save();
-            ctx.globalAlpha = de.opacity;
-            ctx.globalCompositeOperation = (de.blendMode === "normal" ? "source-over" : de.blendMode) as GlobalCompositeOperation;
-            ctx.drawImage(deImg, 0, 0, cropW, cropH);
-            ctx.restore();
-          }
+    // Layer compositing for non-text overlay layers (e.g. double exposure)
+    const currentLayers = layersRef.current;
+    for (let i = currentLayers.length - 1; i >= 0; i--) {
+      const layer = currentLayers[i];
+      if (!layer.visible) continue;
+
+      if (layer.type === "double-exposure" && layer.doubleExposureData) {
+        const de = layer.doubleExposureData;
+        let deImg = doubleExposureImagesRef.current.get(de.imageUrl);
+        if (!deImg) {
+          deImg = new Image();
+          deImg.crossOrigin = "anonymous";
+          deImg.src = de.imageUrl;
+          deImg.onload = () => executeRender();
+          doubleExposureImagesRef.current.set(de.imageUrl, deImg);
+        } else if (deImg.complete) {
+          ctx.save();
+          ctx.globalAlpha = de.opacity;
+          ctx.globalCompositeOperation = (de.blendMode === "normal" ? "source-over" : de.blendMode) as GlobalCompositeOperation;
+          ctx.drawImage(deImg, 0, 0, cropW, cropH);
+          ctx.restore();
         }
       }
     }
@@ -449,9 +446,17 @@ export function useCanvas() {
    * Full-resolution Master Export
    */
   const exportImage = useCallback(
-    (format: "image/png" | "image/jpeg" | "image/webp", quality: number) => {
+    async (format: "image/png" | "image/jpeg" | "image/webp", quality: number) => {
       const img = originalImageRef.current;
       if (!img) return null;
+
+      if (typeof document !== "undefined" && document.fonts) {
+        try {
+          await document.fonts.ready;
+        } catch {
+          // ignore font loading error and proceed
+        }
+      }
 
       const transform = transformRef.current;
       const adj = adjustmentsRef.current;
@@ -519,9 +524,8 @@ export function useCanvas() {
           if (!t.visible) continue;
           expCtx.save();
           const family = t.fontFamily || "ui-monospace, monospace";
-          // Scale font size proportionally to master resolution
-          const scale = cropW / (canvasRef.current?.width || cropW);
-          const scaledFontSize = Math.round(t.fontSize * scale);
+          const normFraction = t.fontSize > 1 ? t.fontSize / 800 : t.fontSize;
+          const scaledFontSize = Math.max(10, Math.round(normFraction * cropH));
           expCtx.font = `bold ${scaledFontSize}px ${family}`;
           expCtx.fillStyle = t.color;
           expCtx.textBaseline = "top";

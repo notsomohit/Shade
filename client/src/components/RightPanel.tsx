@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import {
   ToolType,
   Adjustments,
@@ -22,8 +22,9 @@ import {
 interface RightPanelProps {
   activeTool: ToolType;
   adjustments: Adjustments;
-  onChangeAdjustment: (key: keyof Adjustments, value: number) => void;
+  onChangeAdjustment: (key: keyof Adjustments, value: number, commit?: boolean) => void;
   onResetAdjustments?: () => void;
+  onResetSection?: (keys: (keyof Adjustments)[]) => void;
   curves: CurvesData;
   onChangeCurves: (curves: CurvesData) => void;
   selectivePoints: SelectivePoint[];
@@ -90,8 +91,142 @@ const ASPECT_RATIO_PRESETS = [
 ];
 
 /**
+ * Precision Editable Value Box
+ * - Allows typing intermediate values ("-", "1.")
+ * - Selects all on focus/click
+ * - inputMode="decimal" for mobile numeric keypad
+ * - Commits on Enter or Blur (clamped, step rounded, history saved)
+ * - Cancels on Escape
+ * - ArrowUp/Down steps (Shift = 10x)
+ * - 16px min font on mobile to prevent iOS viewport zoom
+ */
+interface EditableValueBoxProps {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  isExposure?: boolean;
+  onChange: (val: number, commit?: boolean) => void;
+}
+
+function EditableValueBox({
+  value,
+  min,
+  max,
+  step = 1,
+  isExposure = false,
+  onChange,
+}: EditableValueBoxProps) {
+  const formatVal = useCallback(
+    (v: number) => {
+      if (isExposure) {
+        const ev = v / 20;
+        return ev > 0 ? `+${ev.toFixed(2)}` : ev.toFixed(2);
+      }
+      return v > 0 ? `+${v}` : `${v}`;
+    },
+    [isExposure]
+  );
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [text, setText] = useState(formatVal(value));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Keep display string in sync when external value changes and not actively typing
+  useEffect(() => {
+    if (!isEditing) {
+      setText(formatVal(value));
+    }
+  }, [value, isEditing, formatVal]);
+
+  const commitValue = () => {
+    setIsEditing(false);
+    let parsed: number;
+
+    if (isExposure) {
+      const parsedEV = parseFloat(text.replace("+", ""));
+      if (isNaN(parsedEV)) {
+        setText(formatVal(value));
+        return;
+      }
+      parsed = Math.round(parsedEV * 20);
+    } else {
+      const clean = text.replace("+", "").trim();
+      parsed = parseFloat(clean);
+      if (isNaN(parsed)) {
+        setText(formatVal(value));
+        return;
+      }
+      // Round to step
+      parsed = Math.round(parsed / step) * step;
+    }
+
+    const clamped = Math.min(max, Math.max(min, parsed));
+    onChange(clamped, true);
+    setText(formatVal(clamped));
+  };
+
+  const cancelValue = () => {
+    setIsEditing(false);
+    setText(formatVal(value));
+    inputRef.current?.blur();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitValue();
+      inputRef.current?.blur();
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      cancelValue();
+      return;
+    }
+
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      const mult = e.shiftKey ? 10 : 1;
+      let nextVal = value;
+      if (isExposure) {
+        const delta = (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1);
+        nextVal = Math.min(max, Math.max(min, value + delta));
+      } else {
+        const delta = (e.key === "ArrowUp" ? step : -step) * mult;
+        nextVal = Math.min(max, Math.max(min, value + delta));
+      }
+      onChange(nextVal, true);
+      setText(formatVal(nextVal));
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={(e) => {
+        setIsEditing(true);
+        e.target.select();
+      }}
+      onClick={(e) => {
+        (e.target as HTMLInputElement).select();
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commitValue}
+      onKeyDown={handleKeyDown}
+      className="w-[52px] h-6 px-1 bg-[var(--bg-elevated)] border border-[var(--border)] focus:border-[var(--accent)] rounded font-mono text-[16px] sm:text-xs text-[var(--text)] text-center outline-none shrink-0 transition-colors cursor-text"
+      title="Click or use Arrow keys to edit value"
+    />
+  );
+}
+
+/**
  * Standard Compact Slider Row:
- * [Muted Label 90px] [Thin Track + Blue Thumb Slider] [Dark Monospace Value Box 48px]
+ * [Muted Label 88px] [Thin Track + Blue Thumb Slider] [Editable Value Box 52px]
  */
 interface CompactSliderProps {
   label: string;
@@ -99,10 +234,10 @@ interface CompactSliderProps {
   min: number;
   max: number;
   step?: number;
-  onChange: (val: number) => void;
+  isExposure?: boolean;
+  onChange: (val: number, commit?: boolean) => void;
   onCommit?: () => void;
   specialTrack?: "temperature" | "tint" | "bipolar" | "unipolar";
-  formatDisplay?: (val: number) => string;
 }
 
 function CompactSlider({
@@ -111,10 +246,10 @@ function CompactSlider({
   min,
   max,
   step = 1,
+  isExposure = false,
   onChange,
   onCommit,
   specialTrack = "bipolar",
-  formatDisplay,
 }: CompactSliderProps) {
   const getTrackBackground = () => {
     if (specialTrack === "temperature") {
@@ -124,7 +259,6 @@ function CompactSlider({
       return "linear-gradient(to right, #4ade80 0%, #1e2330 50%, #e879f9 100%)";
     }
     if (specialTrack === "bipolar" && min < 0) {
-      // Bipolar center-to-thumb soft blue fill
       const centerPct = 50;
       const currentPct = ((value - min) / (max - min)) * 100;
       const left = Math.min(centerPct, currentPct);
@@ -134,15 +268,9 @@ function CompactSlider({
     return undefined;
   };
 
-  const displayVal = formatDisplay
-    ? formatDisplay(value)
-    : value > 0
-    ? `+${value}`
-    : `${value}`;
-
   return (
-    <div className="flex items-center gap-2.5 h-7">
-      <span className="text-[13px] text-[var(--text-muted)] w-[88px] shrink-0 truncate font-normal">
+    <div className="flex items-center gap-2 h-7">
+      <span className="text-[13px] text-[var(--text-muted)] w-[84px] shrink-0 truncate font-normal">
         {label}
       </span>
 
@@ -153,7 +281,7 @@ function CompactSlider({
           max={max}
           step={step}
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => onChange(Number(e.target.value), false)}
           onPointerUp={onCommit}
           onKeyUp={onCommit}
           style={{ background: getTrackBackground() }}
@@ -161,9 +289,14 @@ function CompactSlider({
         />
       </div>
 
-      <div className="w-[48px] h-6 bg-[var(--bg-elevated)] border border-[var(--border)] rounded flex items-center justify-center font-mono text-xs text-[var(--text)] shrink-0 select-text">
-        {displayVal}
-      </div>
+      <EditableValueBox
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        isExposure={isExposure}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -173,6 +306,7 @@ const RightPanel = memo(function RightPanel({
   adjustments,
   onChangeAdjustment,
   onResetAdjustments,
+  onResetSection,
   curves,
   onChangeCurves,
   selectivePoints,
@@ -214,7 +348,7 @@ const RightPanel = memo(function RightPanel({
   isMobileSheet = false,
   onCloseMobileSheet,
 }: RightPanelProps) {
-  // Top Active Tab: Default to TUNE unless tool is PRESETS/FILTER, or user explicitly clicks tab
+  // Top Active Tab: Default to TUNE unless tool is PRESETS/FILTER, or user clicks tab
   const [activeTab, setActiveTab] = useState<"TUNE" | "PRESETS">("TUNE");
 
   // Keep active tab in sync when user clicks Filter/Presets tool in left bar
@@ -287,7 +421,6 @@ const RightPanel = memo(function RightPanel({
     onUpdateTransform({ straighten: val });
   };
 
-  // Determine if specific tools (Curves, Selective, Crop, Text, Layers, Export) take over panel view
   const isSpecialTool =
     activeTool === "curves" ||
     activeTool === "selective" ||
@@ -306,13 +439,13 @@ const RightPanel = memo(function RightPanel({
             ? "w-full max-h-[55vh] rounded-t-xl border-t border-l-0 shadow-2xl overflow-hidden fixed bottom-0 left-0 right-0 z-50 pb-[env(safe-area-inset-bottom)]"
             : collapsed
             ? "w-0 min-w-0 max-w-0 border-l-0 overflow-hidden"
-            : "w-[320px] md:w-[350px] lg:w-[370px] max-w-[370px]"
+            : "w-[300px] md:w-[330px] lg:w-[370px] max-w-[370px]"
         }
       `}
     >
       {/* Mobile Bottom Sheet Drag Handle and Close Button */}
       {isMobileSheet && (
-        <div className="flex items-center justify-between px-4 pt-2.5 pb-1 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
+        <div className="flex items-center justify-between px-4 pt-2.5 pb-1.5 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
           <div className="w-8" />
           <div className="w-10 h-1 bg-[var(--border-subtle)] rounded-full" />
           <button
@@ -335,7 +468,7 @@ const RightPanel = memo(function RightPanel({
         </button>
       )}
 
-      {/* Top Header Tabs: TUNE | PRESETS (and contextual tool title if in tool mode) */}
+      {/* Top Header Tabs: TUNE | PRESETS */}
       {!isSpecialTool && (
         <div className="h-11 border-b border-[var(--border)] flex items-center px-2 shrink-0 bg-[var(--bg-panel)]">
           <button
@@ -403,7 +536,7 @@ const RightPanel = memo(function RightPanel({
             {presetLayers.length > 0 && (
               <div className="flex items-center justify-between px-2.5 py-1.5 rounded bg-[var(--accent-soft)] border border-[var(--accent)]/30 text-xs">
                 <span className="text-[var(--accent)] font-medium">
-                  + {presetLayers.length} preset {presetLayers.length === 1 ? "layer" : "layers"} active
+                  + {presetLayers.length} preset {presetLayers.length === 1 ? "layer" : "layers"} active (base sliders reset independently)
                 </span>
                 <button
                   onClick={() => setActiveTab("PRESETS")}
@@ -424,19 +557,21 @@ const RightPanel = memo(function RightPanel({
                   <span className="text-[10px] text-[var(--text-muted)]">{openSections.light ? "▼" : "▶"}</span>
                   <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Light</span>
                 </div>
-                {onResetAdjustments && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onChangeAdjustment("exposure", 0);
-                      onChangeAdjustment("brightness", 0);
-                      onChangeAdjustment("contrast", 0);
-                    }}
-                    className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onResetSection) {
+                      onResetSection(["exposure", "brightness", "contrast"]);
+                    } else {
+                      onChangeAdjustment("exposure", 0, true);
+                      onChangeAdjustment("brightness", 0, true);
+                      onChangeAdjustment("contrast", 0, true);
+                    }
+                  }}
+                  className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
+                >
+                  Reset
+                </button>
               </div>
 
               {openSections.light && (
@@ -446,22 +581,22 @@ const RightPanel = memo(function RightPanel({
                     value={adjustments.exposure}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("exposure", v)}
-                    formatDisplay={(v) => (v / 20).toFixed(2)}
+                    isExposure={true}
+                    onChange={(v, commit) => onChangeAdjustment("exposure", v, commit)}
                   />
                   <CompactSlider
                     label="Brightness"
                     value={adjustments.brightness}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("brightness", v)}
+                    onChange={(v, commit) => onChangeAdjustment("brightness", v, commit)}
                   />
                   <CompactSlider
                     label="Contrast"
                     value={adjustments.contrast}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("contrast", v)}
+                    onChange={(v, commit) => onChangeAdjustment("contrast", v, commit)}
                   />
                 </div>
               )}
@@ -477,20 +612,22 @@ const RightPanel = memo(function RightPanel({
                   <span className="text-[10px] text-[var(--text-muted)]">{openSections.tone ? "▼" : "▶"}</span>
                   <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Tone</span>
                 </div>
-                {onResetAdjustments && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onChangeAdjustment("highlights", 0);
-                      onChangeAdjustment("shadows", 0);
-                      onChangeAdjustment("whites", 0);
-                      onChangeAdjustment("blacks", 0);
-                    }}
-                    className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onResetSection) {
+                      onResetSection(["highlights", "shadows", "whites", "blacks"]);
+                    } else {
+                      onChangeAdjustment("highlights", 0, true);
+                      onChangeAdjustment("shadows", 0, true);
+                      onChangeAdjustment("whites", 0, true);
+                      onChangeAdjustment("blacks", 0, true);
+                    }
+                  }}
+                  className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
+                >
+                  Reset
+                </button>
               </div>
 
               {openSections.tone && (
@@ -500,28 +637,28 @@ const RightPanel = memo(function RightPanel({
                     value={adjustments.highlights}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("highlights", v)}
+                    onChange={(v, commit) => onChangeAdjustment("highlights", v, commit)}
                   />
                   <CompactSlider
                     label="Shadows"
                     value={adjustments.shadows}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("shadows", v)}
+                    onChange={(v, commit) => onChangeAdjustment("shadows", v, commit)}
                   />
                   <CompactSlider
                     label="Whites"
                     value={adjustments.whites}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("whites", v)}
+                    onChange={(v, commit) => onChangeAdjustment("whites", v, commit)}
                   />
                   <CompactSlider
                     label="Blacks"
                     value={adjustments.blacks}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("blacks", v)}
+                    onChange={(v, commit) => onChangeAdjustment("blacks", v, commit)}
                   />
                 </div>
               )}
@@ -555,20 +692,22 @@ const RightPanel = memo(function RightPanel({
                   >
                     <span>{isEyedropperActive ? "Sampling..." : "WB"}</span>
                   </button>
-                  {onResetAdjustments && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onChangeAdjustment("temperature", 0);
-                        onChangeAdjustment("tint", 0);
-                        onChangeAdjustment("saturation", 0);
-                        onChangeAdjustment("vibrance", 0);
-                      }}
-                      className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
-                    >
-                      Reset
-                    </button>
-                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onResetSection) {
+                        onResetSection(["temperature", "tint", "saturation", "vibrance"]);
+                      } else {
+                        onChangeAdjustment("temperature", 0, true);
+                        onChangeAdjustment("tint", 0, true);
+                        onChangeAdjustment("saturation", 0, true);
+                        onChangeAdjustment("vibrance", 0, true);
+                      }
+                    }}
+                    className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
+                  >
+                    Reset
+                  </button>
                 </div>
               </div>
 
@@ -580,7 +719,7 @@ const RightPanel = memo(function RightPanel({
                     min={-100}
                     max={100}
                     specialTrack="temperature"
-                    onChange={(v) => onChangeAdjustment("temperature", v)}
+                    onChange={(v, commit) => onChangeAdjustment("temperature", v, commit)}
                   />
                   <CompactSlider
                     label="Tint"
@@ -588,21 +727,21 @@ const RightPanel = memo(function RightPanel({
                     min={-100}
                     max={100}
                     specialTrack="tint"
-                    onChange={(v) => onChangeAdjustment("tint", v)}
+                    onChange={(v, commit) => onChangeAdjustment("tint", v, commit)}
                   />
                   <CompactSlider
                     label="Saturation"
                     value={adjustments.saturation}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("saturation", v)}
+                    onChange={(v, commit) => onChangeAdjustment("saturation", v, commit)}
                   />
                   <CompactSlider
                     label="Vibrance"
                     value={adjustments.vibrance}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("vibrance", v)}
+                    onChange={(v, commit) => onChangeAdjustment("vibrance", v, commit)}
                   />
                 </div>
               )}
@@ -618,21 +757,23 @@ const RightPanel = memo(function RightPanel({
                   <span className="text-[10px] text-[var(--text-muted)]">{openSections.detail ? "▼" : "▶"}</span>
                   <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Detail</span>
                 </div>
-                {onResetAdjustments && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onChangeAdjustment("clarity", 0);
-                      onChangeAdjustment("sharpness", 0);
-                      onChangeAdjustment("blur", 0);
-                      onChangeAdjustment("grain", 0);
-                      onChangeAdjustment("vignette", 0);
-                    }}
-                    className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onResetSection) {
+                      onResetSection(["clarity", "sharpness", "blur", "grain", "vignette", "structure"]);
+                    } else {
+                      onChangeAdjustment("clarity", 0, true);
+                      onChangeAdjustment("sharpness", 0, true);
+                      onChangeAdjustment("blur", 0, true);
+                      onChangeAdjustment("grain", 0, true);
+                      onChangeAdjustment("vignette", 0, true);
+                    }
+                  }}
+                  className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
+                >
+                  Reset
+                </button>
               </div>
 
               {openSections.detail && (
@@ -642,7 +783,7 @@ const RightPanel = memo(function RightPanel({
                     value={adjustments.clarity ?? adjustments.structure ?? 0}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("clarity", v)}
+                    onChange={(v, commit) => onChangeAdjustment("clarity", v, commit)}
                   />
                   <CompactSlider
                     label="Sharpness"
@@ -650,8 +791,7 @@ const RightPanel = memo(function RightPanel({
                     min={0}
                     max={100}
                     specialTrack="unipolar"
-                    onChange={(v) => onChangeAdjustment("sharpness", v)}
-                    formatDisplay={(v) => `${v}`}
+                    onChange={(v, commit) => onChangeAdjustment("sharpness", v, commit)}
                   />
                   <CompactSlider
                     label="Blur"
@@ -659,8 +799,7 @@ const RightPanel = memo(function RightPanel({
                     min={0}
                     max={100}
                     specialTrack="unipolar"
-                    onChange={(v) => onChangeAdjustment("blur", v)}
-                    formatDisplay={(v) => `${v}`}
+                    onChange={(v, commit) => onChangeAdjustment("blur", v, commit)}
                   />
                   <CompactSlider
                     label="Film Grain"
@@ -668,15 +807,14 @@ const RightPanel = memo(function RightPanel({
                     min={0}
                     max={100}
                     specialTrack="unipolar"
-                    onChange={(v) => onChangeAdjustment("grain", v)}
-                    formatDisplay={(v) => `${v}%`}
+                    onChange={(v, commit) => onChangeAdjustment("grain", v, commit)}
                   />
                   <CompactSlider
                     label="Vignette"
                     value={adjustments.vignette}
                     min={-100}
                     max={100}
-                    onChange={(v) => onChangeAdjustment("vignette", v)}
+                    onChange={(v, commit) => onChangeAdjustment("vignette", v, commit)}
                   />
                 </div>
               )}
@@ -733,7 +871,7 @@ const RightPanel = memo(function RightPanel({
                                 e.stopPropagation();
                                 onTogglePresetLayerVisibility(layer.id);
                               }}
-                              className="text-[var(--text-muted)] hover:text-[var(--text)] p-0.5 cursor-pointer"
+                              className="text-[var(--text-muted)] hover:text-[var(--text)] p-0.5 cursor-pointer min-w-[24px] min-h-[24px] flex items-center justify-center"
                               title={layer.visible ? "Hide layer" : "Show layer"}
                             >
                               {layer.visible ? "👁" : "🚫"}
@@ -752,7 +890,7 @@ const RightPanel = memo(function RightPanel({
                                 e.stopPropagation();
                                 onDeletePresetLayer(layer.id);
                               }}
-                              className="w-5 h-5 flex items-center justify-center text-[var(--text-muted)] hover:text-red-400 p-0.5 cursor-pointer text-xs"
+                              className="w-6 h-6 flex items-center justify-center text-[var(--text-muted)] hover:text-red-400 p-0.5 cursor-pointer text-xs"
                               title="Delete layer"
                             >
                               ✕
@@ -785,9 +923,15 @@ const RightPanel = memo(function RightPanel({
                               }
                               className="flex-1"
                             />
-                            <span className="font-mono text-xs w-8 text-right text-[var(--text)]">
-                              {layer.amount}%
-                            </span>
+                            <EditableValueBox
+                              value={layer.amount}
+                              min={0}
+                              max={100}
+                              step={1}
+                              onChange={(val, commit) =>
+                                onUpdatePresetLayerAmount(layer.id, val, commit)
+                              }
+                            />
                           </div>
                         )}
                       </div>
@@ -829,7 +973,7 @@ const RightPanel = memo(function RightPanel({
                               onAddPresetLayer(preset.id, preset.name);
                             }}
                             className={`
-                              p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-left transition-all flex items-center gap-2 cursor-pointer
+                              p-2.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-left transition-all flex items-center gap-2 cursor-pointer min-h-[44px]
                               ${
                                 !hasImage || isCapped
                                   ? "opacity-40 cursor-not-allowed"
@@ -911,7 +1055,7 @@ const RightPanel = memo(function RightPanel({
             {onApplyCrop && (
               <button
                 onClick={onApplyCrop}
-                className="w-full py-2 bg-[var(--accent)] hover:bg-[#256ee0] text-white font-semibold text-xs rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                className="w-full py-2.5 bg-[var(--accent)] hover:bg-[#256ee0] text-white font-semibold text-xs rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm min-h-[44px]"
               >
                 <span>✓</span> Apply Crop Selection
               </button>
@@ -930,7 +1074,7 @@ const RightPanel = memo(function RightPanel({
                       key={preset.id}
                       onClick={() => onUpdateTransform({ aspectRatioPreset: preset.id as any })}
                       className={`
-                        px-2.5 py-1.5 text-xs rounded border text-left cursor-pointer transition-colors
+                        px-2.5 py-2 text-xs rounded border text-left cursor-pointer transition-colors min-h-[40px] flex items-center
                         ${
                           isSelected
                             ? "bg-[var(--accent-soft)] border-[var(--accent)]/50 text-[var(--accent)] font-semibold"
@@ -983,19 +1127,19 @@ const RightPanel = memo(function RightPanel({
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   onClick={handleRotateCCW}
-                  className="p-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] flex items-center justify-center gap-1 cursor-pointer hover:border-[var(--border-subtle)] transition-colors"
+                  className="p-2.5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] flex items-center justify-center gap-1 cursor-pointer hover:border-[var(--border-subtle)] transition-colors min-h-[44px]"
                 >
                   ↺ 90° CCW
                 </button>
                 <button
                   onClick={handleRotateCW}
-                  className="p-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] flex items-center justify-center gap-1 cursor-pointer hover:border-[var(--border-subtle)] transition-colors"
+                  className="p-2.5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] flex items-center justify-center gap-1 cursor-pointer hover:border-[var(--border-subtle)] transition-colors min-h-[44px]"
                 >
                   ↻ 90° CW
                 </button>
                 <button
                   onClick={handleFlipH}
-                  className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                  className={`p-2.5 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors min-h-[44px] ${
                     transformState.flipH
                       ? "bg-[var(--accent-soft)] border-[var(--accent)]/50 text-[var(--accent)] font-semibold"
                       : "bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text)] hover:border-[var(--border-subtle)]"
@@ -1005,7 +1149,7 @@ const RightPanel = memo(function RightPanel({
                 </button>
                 <button
                   onClick={handleFlipV}
-                  className={`p-2 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                  className={`p-2.5 border rounded text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors min-h-[44px] ${
                     transformState.flipV
                       ? "bg-[var(--accent-soft)] border-[var(--accent)]/50 text-[var(--accent)] font-semibold"
                       : "bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text)] hover:border-[var(--border-subtle)]"
@@ -1038,7 +1182,7 @@ const RightPanel = memo(function RightPanel({
                     onUpdateTextLayer(selectedLayerId, { text: e.target.value });
                   }
                 }}
-                className="w-full px-2.5 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                className="w-full px-2.5 py-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-[16px] sm:text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)] min-h-[40px]"
               />
             </div>
 
@@ -1055,7 +1199,7 @@ const RightPanel = memo(function RightPanel({
                     }
                   }
                 }}
-                className="w-full px-2.5 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                className="w-full px-2.5 py-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-[16px] sm:text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)] min-h-[40px]"
               >
                 {CATEGORIZED_FONTS.map((font) => (
                   <option key={font.name} value={font.name}>
@@ -1067,7 +1211,7 @@ const RightPanel = memo(function RightPanel({
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <span className="text-xs text-[var(--text-muted)]">Font Size</span>
+                <span className="text-xs text-[var(--text-muted)]">Font Size (px)</span>
                 <input
                   type="number"
                   min="12"
@@ -1080,7 +1224,7 @@ const RightPanel = memo(function RightPanel({
                       onUpdateTextLayer(selectedLayerId, { fontSize: size });
                     }
                   }}
-                  className="w-full px-2.5 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)]"
+                  className="w-full px-2.5 py-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-[16px] sm:text-xs text-[var(--text)] min-h-[40px]"
                 />
               </div>
 
@@ -1095,7 +1239,7 @@ const RightPanel = memo(function RightPanel({
                       onUpdateTextLayer(selectedLayerId, { color: e.target.value });
                     }
                   }}
-                  className="w-full h-8 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded cursor-pointer"
+                  className="w-full h-10 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded cursor-pointer"
                 />
               </div>
             </div>
@@ -1111,7 +1255,7 @@ const RightPanel = memo(function RightPanel({
                     selectedFont.category as any
                   );
                 }}
-                className="w-full py-2 bg-[var(--accent)] text-white font-semibold rounded text-xs hover:bg-[#256ee0] transition-colors cursor-pointer"
+                className="w-full py-2.5 bg-[var(--accent)] text-white font-semibold rounded text-xs hover:bg-[#256ee0] transition-colors cursor-pointer min-h-[44px]"
               >
                 + Add Text to Canvas
               </button>
@@ -1130,7 +1274,7 @@ const RightPanel = memo(function RightPanel({
               </span>
               <button
                 onClick={() => doubleExposureFileInputRef.current?.click()}
-                className="px-2 py-0.5 text-[11px] rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--accent)] hover:border-[var(--accent)] cursor-pointer flex items-center gap-1 transition-colors"
+                className="px-2.5 py-1 text-[11px] rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--accent)] hover:border-[var(--accent)] cursor-pointer flex items-center gap-1 transition-colors min-h-[32px]"
                 title="Blend second image (Double Exposure)"
               >
                 + Double Exposure
@@ -1189,7 +1333,7 @@ const RightPanel = memo(function RightPanel({
                     key={layer.id}
                     onClick={() => onSelectLayer(layer.id)}
                     className={`
-                      flex items-center justify-between p-2 rounded border text-xs cursor-pointer transition-all
+                      flex items-center justify-between p-2.5 rounded border text-xs cursor-pointer transition-all min-h-[44px]
                       ${
                         isSelected
                           ? "bg-[var(--accent-soft)] border-[var(--accent)]/50 text-[var(--text)]"
@@ -1211,7 +1355,7 @@ const RightPanel = memo(function RightPanel({
                           e.stopPropagation();
                           onToggleLayerVisibility(layer.id);
                         }}
-                        className="text-[var(--text-muted)] hover:text-[var(--text)] p-1 cursor-pointer transition-colors"
+                        className="text-[var(--text-muted)] hover:text-[var(--text)] p-1.5 cursor-pointer transition-colors min-w-[32px] min-h-[32px] flex items-center justify-center"
                         title="Toggle visibility"
                       >
                         {layer.visible ? "👁" : "🚫"}
@@ -1222,7 +1366,7 @@ const RightPanel = memo(function RightPanel({
                             e.stopPropagation();
                             onDeleteLayer(layer.id);
                           }}
-                          className="text-red-400 hover:text-red-300 p-1 cursor-pointer transition-colors"
+                          className="text-red-400 hover:text-red-300 p-1.5 cursor-pointer transition-colors min-w-[32px] min-h-[32px] flex items-center justify-center"
                           title="Delete layer"
                         >
                           ✕
@@ -1255,7 +1399,7 @@ const RightPanel = memo(function RightPanel({
                     key={fmt}
                     onClick={() => onChangeExportSettings({ ...exportSettings, format: fmt })}
                     className={`
-                      py-2 text-xs rounded border uppercase font-semibold cursor-pointer transition-colors
+                      py-2.5 text-xs rounded border uppercase font-semibold cursor-pointer transition-colors min-h-[44px]
                       ${
                         exportSettings.format === fmt
                           ? "bg-[var(--accent)] text-white border-[var(--accent)]"
@@ -1295,7 +1439,7 @@ const RightPanel = memo(function RightPanel({
 
             <button
               onClick={onTriggerExport}
-              className="w-full py-2.5 bg-[var(--accent)] hover:bg-[#256ee0] text-white font-semibold rounded text-xs transition-colors cursor-pointer mt-3 shadow-md flex items-center justify-center gap-2"
+              className="w-full py-3 bg-[var(--accent)] hover:bg-[#256ee0] text-white font-semibold rounded text-xs transition-colors cursor-pointer mt-3 shadow-md flex items-center justify-center gap-2 min-h-[44px]"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
