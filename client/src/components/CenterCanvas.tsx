@@ -25,12 +25,14 @@ interface CenterCanvasProps {
   selectivePoints: SelectivePoint[];
   selectedSelectivePointId: string | null;
   isEyedropperActive?: boolean;
+  isEraserPickerActive?: boolean;
   transformState?: TransformState;
   onSelectLayer: (id: string | null) => void;
   onSelectSelectivePoint: (id: string | null) => void;
   onAddSelectivePointAt: (normX: number, normY: number) => void;
   onUpdateSelectivePoint: (id: string, updates: Partial<SelectivePoint>) => void;
   onSampleWhiteBalance?: (normX: number, normY: number) => void;
+  onSampleEraserColor?: (normX: number, normY: number) => void;
   onUpdateTextPosition: (id: string, x: number, y: number) => void;
   onUpdateTextFontSize: (id: string, fontSize: number) => void;
   onDeleteLayer?: (id: string) => void;
@@ -41,6 +43,14 @@ interface CenterCanvasProps {
 }
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+
+/**
+ * Standard transparency checkerboard, drawn behind the edited canvas so any
+ * pixels keyed out by the Background Eraser read as "transparent" rather than
+ * as black. Uses conic-gradient, which every supported browser renders.
+ */
+const TRANSPARENCY_CHECKER =
+  "conic-gradient(from 90deg at 1px 1px, rgba(255,255,255,0.10) 25%, transparent 0) 0 0/16px 16px";
 
 type CropHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w" | "move";
 
@@ -57,12 +67,14 @@ const CenterCanvas = memo(function CenterCanvas({
   selectivePoints,
   selectedSelectivePointId,
   isEyedropperActive = false,
+  isEraserPickerActive = false,
   transformState,
   onSelectLayer,
   onSelectSelectivePoint,
   onAddSelectivePointAt,
   onUpdateSelectivePoint,
   onSampleWhiteBalance,
+  onSampleEraserColor,
   onUpdateTextPosition,
   onUpdateTextFontSize,
   onImageSelect,
@@ -212,6 +224,11 @@ const CenterCanvas = memo(function CenterCanvas({
 
     if (isEyedropperActive && onSampleWhiteBalance) {
       onSampleWhiteBalance(normX, normY);
+      return;
+    }
+
+    if (isEraserPickerActive && onSampleEraserColor) {
+      onSampleEraserColor(normX, normY);
       return;
     }
 
@@ -654,6 +671,21 @@ const CenterCanvas = memo(function CenterCanvas({
         </div>
       )}
 
+      {/* Background Eraser colour sampling banner */}
+      {isEraserPickerActive && (
+        <div className="absolute top-4 z-40 px-3.5 py-1.5 bg-[var(--accent)] text-white font-medium text-xs rounded-md shadow-xl flex items-center gap-2 animate-bounce">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
+            />
+          </svg>
+          <span>Click the background to sample its colour</span>
+        </div>
+      )}
+
       {/* Drag upload overlay */}
       {isDraggingUpload && (
         <div className="absolute inset-0 bg-[#3b82f6]/10 border-2 border-dashed border-[#3b82f6] z-50 flex items-center justify-center backdrop-blur-sm pointer-events-none">
@@ -751,11 +783,13 @@ const CenterCanvas = memo(function CenterCanvas({
           onClick={handleCanvasContainerClick}
           className={`relative max-w-full max-h-full rounded shadow-2xl border border-[#222227] overflow-hidden ${
             isEyedropperActive ? "cursor-crosshair" : activeTool === "selective" ? "cursor-crosshair" : ""
-          }`}
+          } ${isEraserPickerActive ? "cursor-crosshair" : ""}`}
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
             transformOrigin: "center center",
             aspectRatio: imageAspectRatio,
+            backgroundColor: "#121215",
+            backgroundImage: TRANSPARENCY_CHECKER,
           }}
         >
           <canvas

@@ -27,6 +27,11 @@ A clean, professional dark photo editor with non-destructive adjustments, tone c
    - Reorder layers via drag & drop or ▲ / ▼ buttons (top of list = rendered on top).
 6. **High-Visibility Canvas Grid Guides**:
    - High contrast guide lines with subtle drop shadows: `GRID: OFF` ➔ `GRID: 8×8` ➔ `GRID: THIRDS`.
+7. **Background Eraser (Chroma Key)**:
+   - Key out a flat, uniform background by colour with a colour picker, an in-canvas `Sample` eyedropper, and a `0–100%` tolerance slider.
+   - Non-destructive: matching pixels are made transparent in the existing pipeline, so `Ctrl+Z` / `Ctrl+Y` undo and redo it.
+   - Non-matching pixels keep their original colours; a soft edge keeps cut-outs from looking jagged.
+   - Checkerboard shows through where pixels were removed. Transparency is preserved when exporting to **PNG**.
 
 ## Getting Started
 
@@ -51,6 +56,7 @@ npm run dev:server   # → http://localhost:4000
 - [x] Phase 4 — Preset LUT filters & aesthetic filter cards
 - [x] Phase 5 — Undo/redo & edit history stack
 - [x] Phase 6 — Full resolution PNG/JPEG/WebP export engine
+- [x] Phase 6.1 — Background eraser / chroma key with transparent PNG export
 - [ ] Phase 7 — Auth
 - [ ] Phase 8 — Save/load projects
 - [ ] Phase 9 — Gallery/dashboard

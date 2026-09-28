@@ -8,12 +8,37 @@ import {
   FilterSettings,
   CurvesData,
   SelectivePoint,
+  BackgroundEraserSettings,
 } from "@/types/editor";
 import { DEFAULT_CURVES } from "@/components/CurvesTool";
 import { DEFAULT_ADJUSTMENTS } from "@/constants/presets";
-import { processPixelData } from "@/workers/imageProcessor.worker";
+import {
+  processPixelData,
+  BackgroundEraserParams,
+} from "@/workers/imageProcessor.worker";
 
 export { DEFAULT_ADJUSTMENTS };
+
+/**
+ * Convert a #rrggbb (or #rgb) string into the 0-255 components used by the
+ * chroma key stage in the image processor.
+ */
+export function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  let clean = hex.trim().replace(/^#/, "");
+  if (clean.length === 3) {
+    clean = clean[0] + clean[0] + clean[1] + clean[1] + clean[2] + clean[2];
+  }
+  const int = parseInt(clean, 16);
+  if (!Number.isFinite(int) || clean.length !== 6) {
+    return { r: 255, g: 255, b: 255 };
+  }
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+}
+
+function toEraserParams(settings: BackgroundEraserSettings): BackgroundEraserParams {
+  const { r, g, b } = hexToRgb(settings.color);
+  return { enabled: settings.enabled, r, g, b, tolerance: settings.tolerance };
+}
 
 export interface TransformState {
   rotation: number; // 0, 90, 180, 270
@@ -56,6 +81,11 @@ export function useCanvas() {
 
   const gridModeRef = useRef<GridMode>("none");
   const layersRef = useRef<LayerItem[]>([]);
+  const backgroundEraserRef = useRef<BackgroundEraserSettings>({
+    enabled: false,
+    color: "#ffffff",
+    tolerance: 30,
+  });
   const rafIdRef = useRef<number | null>(null);
 
   // Cache loaded double exposure images
@@ -114,6 +144,7 @@ export function useCanvas() {
     const curves = curvesRef.current;
     const selectivePoints = selectivePointsRef.current;
     const gridMode = gridModeRef.current;
+    const backgroundEraser = backgroundEraserRef.current;
 
     const naturalW = src instanceof HTMLImageElement ? src.naturalWidth : src.width;
     const naturalH = src instanceof HTMLImageElement ? src.naturalHeight : src.height;
@@ -215,7 +246,11 @@ export function useCanvas() {
           (curves.blue && curves.blue.length > 2) ||
           (curves.rgb && (curves.rgb[0].y !== 0 || curves.rgb[1]?.y !== 255))));
 
-    if (hasAnyAdjustments) {
+    // The chroma key writes the alpha channel, so the pixel pass must run even
+    // when every other adjustment sits at its neutral value.
+    const hasEraserActive = backgroundEraser.enabled;
+
+    if (hasAnyAdjustments || hasEraserActive) {
       const imageData = adjCtx.getImageData(0, 0, cropW, cropH);
       processPixelData(
         imageData.data,
@@ -224,7 +259,8 @@ export function useCanvas() {
         adj,
         filter,
         selectivePoints,
-        curves
+        curves,
+        toEraserParams(backgroundEraser)
       );
       adjCtx.putImageData(imageData, 0, 0);
     }
@@ -374,6 +410,11 @@ export function useCanvas() {
             name: "Original",
             intensity: 100,
           };
+          backgroundEraserRef.current = {
+            enabled: false,
+            color: "#ffffff",
+            tolerance: 30,
+          };
           renderPipeline();
           resolve(img);
         };
@@ -445,6 +486,35 @@ export function useCanvas() {
     [renderPipeline]
   );
 
+  const updateBackgroundEraser = useCallback(
+    (settings: BackgroundEraserSettings) => {
+      backgroundEraserRef.current = settings;
+      renderPipeline();
+    },
+    [renderPipeline]
+  );
+
+  /**
+   * Read a single pixel from the rendered canvas and return it as a #rrggbb
+   * string. Used by the Background Eraser color picker.
+   */
+  const sampleCanvasColor = useCallback((normX: number, normY: number): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+
+    const px = Math.min(canvas.width - 1, Math.max(0, Math.round(normX * canvas.width)));
+    const py = Math.min(canvas.height - 1, Math.max(0, Math.round(normY * canvas.height)));
+
+    const d = ctx.getImageData(px, py, 1, 1).data;
+    if (d[3] === 0) return null; // already keyed out, nothing to sample
+
+    const toHex = (n: number) => n.toString(16).padStart(2, "0");
+    return `#${toHex(d[0])}${toHex(d[1])}${toHex(d[2])}`;
+  }, []);
+
   /**
    * Full-resolution Master Export
    */
@@ -504,7 +574,8 @@ export function useCanvas() {
         adj,
         filter,
         selectivePoints,
-        curves
+        curves,
+        toEraserParams(backgroundEraserRef.current)
       );
       expCtx.putImageData(imageData, 0, 0);
 
@@ -558,6 +629,8 @@ export function useCanvas() {
     updateTransform,
     updateGridMode,
     updateLayers,
+    updateBackgroundEraser,
+    sampleCanvasColor,
     samplePixelWhiteBalance,
     exportImage,
     transformState: transformRef.current,

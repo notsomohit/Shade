@@ -13,6 +13,8 @@ import {
   CurvesData,
   SelectivePoint,
   PresetLayer,
+  BackgroundEraserSettings,
+  DEFAULT_BACKGROUND_ERASER,
 } from "@/types/editor";
 import TopBar from "@/components/TopBar";
 import LeftToolbar from "@/components/LeftToolbar";
@@ -32,6 +34,7 @@ interface HistoryEntry {
   selectivePoints: SelectivePoint[];
   layers: LayerItem[];
   transform: TransformState;
+  backgroundEraser: BackgroundEraserSettings;
 }
 
 const DEFAULT_TRANSFORM: TransformState = {
@@ -57,6 +60,8 @@ export default function Home() {
     updateTransform,
     updateGridMode,
     updateLayers,
+    updateBackgroundEraser,
+    sampleCanvasColor,
     samplePixelWhiteBalance,
     exportImage,
     filterSettings,
@@ -86,6 +91,10 @@ export default function Home() {
   const [selectedSelectivePointId, setSelectedSelectivePointId] = useState<string | null>(null);
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
   const [transform, setTransform] = useState<TransformState>({ ...DEFAULT_TRANSFORM });
+  const [backgroundEraser, setBackgroundEraser] = useState<BackgroundEraserSettings>({
+    ...DEFAULT_BACKGROUND_ERASER,
+  });
+  const [isEraserPickerActive, setIsEraserPickerActive] = useState(false);
 
   // Layers & Export
   const [layers, setLayers] = useState<LayerItem[]>([]);
@@ -115,6 +124,11 @@ export default function Home() {
     updateAdjustments(effectiveAdjustments);
   }, [effectiveAdjustments, updateAdjustments]);
 
+  // Sync Background Eraser to canvas pipeline
+  useEffect(() => {
+    updateBackgroundEraser(backgroundEraser);
+  }, [backgroundEraser, updateBackgroundEraser]);
+
   // Handle responsive viewport detection (< 640px = Mobile)
   useEffect(() => {
     const checkViewport = () => {
@@ -139,6 +153,7 @@ export default function Home() {
         selectivePoints: newEntry.selectivePoints ?? selectivePoints,
         layers: newEntry.layers ?? layers,
         transform: newEntry.transform ?? transform,
+        backgroundEraser: newEntry.backgroundEraser ?? backgroundEraser,
       };
 
       setHistory((prev) => {
@@ -155,6 +170,7 @@ export default function Home() {
       selectivePoints,
       layers,
       transform,
+      backgroundEraser,
       historyIndex,
     ]
   );
@@ -180,6 +196,7 @@ export default function Home() {
         updateTransform(prev.transform);
       }
 
+      setBackgroundEraser(prev.backgroundEraser ?? { ...DEFAULT_BACKGROUND_ERASER });
       setHistoryIndex(historyIndex - 1);
       showToast("Undo", "info");
     }
@@ -215,6 +232,7 @@ export default function Home() {
         updateTransform(next.transform);
       }
 
+      setBackgroundEraser(next.backgroundEraser ?? { ...DEFAULT_BACKGROUND_ERASER });
       setHistoryIndex(historyIndex + 1);
       showToast("Redo", "info");
     }
@@ -259,6 +277,8 @@ export default function Home() {
         setSelectivePoints([]);
         setSelectedSelectivePointId(null);
         setTransform({ ...DEFAULT_TRANSFORM });
+        setBackgroundEraser({ ...DEFAULT_BACKGROUND_ERASER });
+        setIsEraserPickerActive(false);
         setLayers(initialLayers);
         updateLayers(initialLayers);
         setHasImage(true);
@@ -272,6 +292,7 @@ export default function Home() {
           selectivePoints: [],
           layers: initialLayers,
           transform: { ...DEFAULT_TRANSFORM },
+          backgroundEraser: { ...DEFAULT_BACKGROUND_ERASER },
         };
         setHistory([initialEntry]);
         setHistoryIndex(0);
@@ -521,6 +542,68 @@ export default function Home() {
     pushHistory({ transform: next });
     showToast("Reset crop to full photo", "info");
   }, [transform, updateTransform, pushHistory, showToast]);
+
+  /**
+   * Background Eraser Handlers
+   */
+  const handleChangeEraserColor = useCallback(
+    (color: string) => {
+      const next = { ...backgroundEraser, color };
+      setBackgroundEraser(next);
+      updateBackgroundEraser(next);
+    },
+    [backgroundEraser, updateBackgroundEraser]
+  );
+
+  const handleChangeEraserTolerance = useCallback(
+    (tolerance: number) => {
+      const next = { ...backgroundEraser, tolerance };
+      setBackgroundEraser(next);
+      updateBackgroundEraser(next);
+    },
+    [backgroundEraser, updateBackgroundEraser]
+  );
+
+  const handleCommitEraser = useCallback(() => {
+    pushHistory({ backgroundEraser });
+  }, [backgroundEraser, pushHistory]);
+
+  const handleSampleEraserColor = useCallback(
+    (normX: number, normY: number) => {
+      const hex = sampleCanvasColor(normX, normY);
+      setIsEraserPickerActive(false);
+      if (!hex) {
+        showToast("No colour to sample at that point", "info");
+        return;
+      }
+      handleChangeEraserColor(hex);
+      showToast(`Sampled background colour ${hex.toUpperCase()}`, "success");
+    },
+    [sampleCanvasColor, handleChangeEraserColor, showToast]
+  );
+
+  const handleToggleBackgroundRemoval = useCallback(
+    (enabled: boolean) => {
+      const next = { ...backgroundEraser, enabled };
+      setBackgroundEraser(next);
+      updateBackgroundEraser(next);
+      pushHistory({ backgroundEraser: next });
+      showToast(
+        enabled ? "Background removed" : "Background restored",
+        enabled ? "success" : "info"
+      );
+    },
+    [backgroundEraser, updateBackgroundEraser, pushHistory, showToast]
+  );
+
+  const handleResetBackgroundEraser = useCallback(() => {
+    const next = { ...DEFAULT_BACKGROUND_ERASER };
+    setBackgroundEraser(next);
+    updateBackgroundEraser(next);
+    setIsEraserPickerActive(false);
+    pushHistory({ backgroundEraser: next });
+    showToast("Background eraser reset", "info");
+  }, [updateBackgroundEraser, pushHistory, showToast]);
 
   /**
    * Double Exposure Layer Handler
@@ -779,6 +862,7 @@ export default function Home() {
       if (e.key === "Escape") {
         setShowShortcutsModal(false);
         setIsEyedropperActive(false);
+        setIsEraserPickerActive(false);
         setSelectedLayerId(null);
         setSelectedSelectivePointId(null);
         setMobileSheetOpen(false);
@@ -851,6 +935,11 @@ export default function Home() {
           break;
         case "l":
           setActiveTool("layers");
+          setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
+          break;
+        case "b":
+          setActiveTool("eraser");
           setRightPanelCollapsed(false);
           if (isMobile) setMobileSheetOpen(true);
           break;
@@ -942,6 +1031,7 @@ export default function Home() {
           selectivePoints={selectivePoints}
           selectedSelectivePointId={selectedSelectivePointId}
           isEyedropperActive={isEyedropperActive}
+          isEraserPickerActive={isEraserPickerActive}
           transformState={transform}
           onSelectLayer={(id) => {
             setSelectedLayerId(id);
@@ -956,6 +1046,7 @@ export default function Home() {
           onAddSelectivePointAt={handleAddSelectivePointAt}
           onUpdateSelectivePoint={handleUpdateSelectivePoint}
           onSampleWhiteBalance={handleSampleWhiteBalance}
+          onSampleEraserColor={handleSampleEraserColor}
           onUpdateTextPosition={handleUpdateTextPosition}
           onUpdateTextFontSize={handleUpdateTextFontSize}
           onDeleteLayer={handleDeleteLayer}
@@ -1011,6 +1102,14 @@ export default function Home() {
             exportSettings={exportSettings}
             onChangeExportSettings={setExportSettings}
             onTriggerExport={handleTriggerExport}
+            backgroundEraser={backgroundEraser}
+            onChangeEraserColor={handleChangeEraserColor}
+            onChangeEraserTolerance={handleChangeEraserTolerance}
+            onCommitEraser={handleCommitEraser}
+            onToggleBackgroundRemoval={handleToggleBackgroundRemoval}
+            onResetBackgroundEraser={handleResetBackgroundEraser}
+            isEraserPickerActive={isEraserPickerActive}
+            onToggleEraserPicker={() => setIsEraserPickerActive((prev) => !prev)}
             collapsed={rightPanelCollapsed}
             onToggleCollapsed={() => setRightPanelCollapsed((prev) => !prev)}
             hasImage={hasImage}
@@ -1085,6 +1184,14 @@ export default function Home() {
           exportSettings={exportSettings}
           onChangeExportSettings={setExportSettings}
           onTriggerExport={handleTriggerExport}
+          backgroundEraser={backgroundEraser}
+          onChangeEraserColor={handleChangeEraserColor}
+          onChangeEraserTolerance={handleChangeEraserTolerance}
+          onCommitEraser={handleCommitEraser}
+          onToggleBackgroundRemoval={handleToggleBackgroundRemoval}
+          onResetBackgroundEraser={handleResetBackgroundEraser}
+          isEraserPickerActive={isEraserPickerActive}
+          onToggleEraserPicker={() => setIsEraserPickerActive((prev) => !prev)}
           hasImage={hasImage}
           isMobileSheet={true}
           onCloseMobileSheet={() => setMobileSheetOpen(false)}

@@ -1,6 +1,18 @@
 import { Adjustments, FilterSettings, SelectivePoint, CurvesData } from "@/types/editor";
 import { generateCurveLUT } from "@/utils/curveUtils";
 
+/**
+ * Background Eraser (chroma key) settings.
+ * `r`, `g`, `b` are the 0-255 components of the key color.
+ */
+export interface BackgroundEraserParams {
+  enabled: boolean;
+  r: number;
+  g: number;
+  b: number;
+  tolerance: number; // 0 to 100
+}
+
 export interface ProcessImageMessage {
   type: "PROCESS_IMAGE";
   id: number;
@@ -11,6 +23,7 @@ export interface ProcessImageMessage {
   filter: FilterSettings;
   selectivePoints: SelectivePoint[];
   curves: CurvesData;
+  backgroundEraser?: BackgroundEraserParams;
 }
 
 /**
@@ -20,6 +33,16 @@ function smoothstep(min: number, max: number, value: number): number {
   const x = Math.max(0, Math.min(1, (value - min) / (max - min)));
   return x * x * (3 - 2 * x);
 }
+
+/**
+ * Background Eraser constants.
+ * The theoretical maximum Euclidean RGB distance is sqrt(3) * 255 (~441.67).
+ * The 0-100 tolerance slider maps onto 0-220 so the usable range covers
+ * near-identical colors through to strongly tinted backgrounds.
+ */
+const MAX_RGB_DISTANCE = Math.sqrt(3) * 255;
+const TOLERANCE_SPAN = 220;
+const SOFT_EDGE_START = 0.8; // fraction of maxDist where the ramp begins
 
 /**
  * Professional Image Processing Engine
@@ -32,7 +55,8 @@ export function processPixelData(
   adj: Adjustments,
   filter: FilterSettings,
   selectivePoints: SelectivePoint[],
-  curves: CurvesData
+  curves: CurvesData,
+  backgroundEraser?: BackgroundEraserParams
 ) {
   const len = data.length;
   const numPixels = width * height;
@@ -137,6 +161,22 @@ export function processPixelData(
   // Grain parameters
   const hasGrain = adj.grain > 0;
   const grainAmt = (adj.grain / 100) * 28;
+
+  // Background Eraser (chroma key) parameters.
+  // Applied last, on the final rendered color, so the key color always matches
+  // what the user sees in the canvas preview. Only the alpha channel is written,
+  // so the RGB of every surviving pixel is preserved exactly.
+  const eraser = backgroundEraser;
+  const hasEraser = !!eraser && eraser.enabled;
+  const eraserKeyR = eraser ? eraser.r : 0;
+  const eraserKeyG = eraser ? eraser.g : 0;
+  const eraserKeyB = eraser ? eraser.b : 0;
+  // Tolerance 0 collapses to an exact-colour match rather than disabling the
+  // stage, so the Remove Background button is never a no-op.
+  const eraserMaxDist = hasEraser
+    ? Math.min(MAX_RGB_DISTANCE, (eraser!.tolerance / 100) * TOLERANCE_SPAN)
+    : 0;
+  const eraserSoftStart = eraserMaxDist * SOFT_EDGE_START;
 
   // 4. Main Pixel Processing Loop
   for (let i = 0; i < len; i += 4) {
@@ -454,6 +494,29 @@ export function processPixelData(
     data[i] = Math.min(255, Math.max(0, r));
     data[i + 1] = Math.min(255, Math.max(0, g));
     data[i + 2] = Math.min(255, Math.max(0, b));
+
+    // 14. Background Eraser (chroma key -> alpha). Colors are left untouched.
+    if (hasEraser) {
+      const dr = data[i] - eraserKeyR;
+      const dg = data[i + 1] - eraserKeyG;
+      const db = data[i + 2] - eraserKeyB;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+      let keep = 1;
+      if (eraserMaxDist > 0) {
+        // 0 -> fully transparent, 1 -> fully opaque, smooth ramp across the soft edge
+        if (dist < eraserMaxDist) {
+          keep = smoothstep(eraserSoftStart, eraserMaxDist, dist);
+        }
+      } else if (dist === 0) {
+        // Tolerance 0: only pixels exactly equal to the key colour are removed
+        keep = 0;
+      }
+
+      if (keep < 1) {
+        data[i + 3] = Math.round(data[i + 3] * keep);
+      }
+    }
   }
 }
 
@@ -577,10 +640,10 @@ function boxBlurLuminance(lum: Float32Array, width: number, height: number, radi
 // Web Worker handler
 if (typeof self !== "undefined" && typeof (self as any).addEventListener === "function") {
   self.addEventListener("message", (e: MessageEvent<ProcessImageMessage>) => {
-    const { id, width, height, buffer, adjustments, filter, selectivePoints, curves } = e.data;
+    const { id, width, height, buffer, adjustments, filter, selectivePoints, curves, backgroundEraser } = e.data;
     const data = new Uint8ClampedArray(buffer);
 
-    processPixelData(data, width, height, adjustments, filter, selectivePoints, curves);
+    processPixelData(data, width, height, adjustments, filter, selectivePoints, curves, backgroundEraser);
 
     // Transfer buffer back to main thread zero-copy
     (self as any).postMessage({ id, buffer }, [buffer]);

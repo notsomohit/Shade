@@ -9,6 +9,7 @@ import {
   CurvesData,
   SelectivePoint,
   PresetLayer,
+  BackgroundEraserSettings,
 } from "@/types/editor";
 import { TransformState } from "@/hooks/useCanvas";
 import { CATEGORIZED_FONTS } from "@/utils/fonts";
@@ -72,6 +73,14 @@ interface RightPanelProps {
   exportSettings: ExportSettings;
   onChangeExportSettings: (settings: ExportSettings) => void;
   onTriggerExport: () => void;
+  backgroundEraser: BackgroundEraserSettings;
+  onChangeEraserColor: (color: string) => void;
+  onChangeEraserTolerance: (tolerance: number) => void;
+  onCommitEraser: () => void;
+  onToggleBackgroundRemoval: (enabled: boolean) => void;
+  onResetBackgroundEraser: () => void;
+  isEraserPickerActive: boolean;
+  onToggleEraserPicker: () => void;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   hasImage?: boolean;
@@ -208,6 +217,14 @@ const RightPanel = memo(function RightPanel({
   exportSettings,
   onChangeExportSettings,
   onTriggerExport,
+  backgroundEraser,
+  onChangeEraserColor,
+  onChangeEraserTolerance,
+  onCommitEraser,
+  onToggleBackgroundRemoval,
+  onResetBackgroundEraser,
+  isEraserPickerActive,
+  onToggleEraserPicker,
   collapsed = false,
   onToggleCollapsed,
   hasImage = false,
@@ -287,13 +304,14 @@ const RightPanel = memo(function RightPanel({
     onUpdateTransform({ straighten: val });
   };
 
-  // Determine if specific tools (Curves, Selective, Crop, Text, Layers, Export) take over panel view
+  // Determine if specific tools (Curves, Selective, Crop, Text, Layers, Eraser, Export) take over panel view
   const isSpecialTool =
     activeTool === "curves" ||
     activeTool === "selective" ||
     activeTool === "crop" ||
     activeTool === "text" ||
     activeTool === "layers" ||
+    activeTool === "eraser" ||
     activeTool === "export";
 
   return (
@@ -1237,7 +1255,123 @@ const RightPanel = memo(function RightPanel({
         )}
 
         {/* ======================================================== */}
-        {/* 8. EXPORT PANEL */}
+        {/* 8. BACKGROUND ERASER */}
+        {/* ======================================================== */}
+        {activeTool === "eraser" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                Background Eraser
+              </span>
+              <button
+                onClick={onResetBackgroundEraser}
+                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+
+            <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Picks out a flat, uniform background by colour. Pixels close to the
+              key colour become transparent; everything else keeps its original
+              colours.
+            </p>
+
+            {/* Background Key Colour */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-muted)]">
+                Background Colour
+              </span>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={backgroundEraser.color}
+                  onChange={(e) => onChangeEraserColor(e.target.value)}
+                  className="w-10 h-8 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded cursor-pointer shrink-0"
+                  title="Pick the background colour"
+                />
+                <div className="flex-1 h-8 px-2.5 flex items-center bg-[var(--bg-elevated)] border border-[var(--border)] rounded font-mono text-xs text-[var(--text)] uppercase select-text min-w-0">
+                  <span className="truncate">{backgroundEraser.color}</span>
+                </div>
+                <button
+                  onClick={onToggleEraserPicker}
+                  className={`
+                    h-8 px-2.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-all cursor-pointer shrink-0
+                    ${
+                      isEraserPickerActive
+                        ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                        : "bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text)]"
+                    }
+                  `}
+                  title="Click the photo to sample a background colour"
+                >
+                  {isEraserPickerActive ? "Pick…" : "Sample"}
+                </button>
+              </div>
+
+              {isEraserPickerActive && (
+                <p className="text-[10px] text-[var(--accent)]">
+                  Click the photo to sample its colour.
+                </p>
+              )}
+            </div>
+
+            {/* Tolerance */}
+            <div className="space-y-1.5 pt-1">
+              <CompactSlider
+                label="Tolerance"
+                value={backgroundEraser.tolerance}
+                min={0}
+                max={100}
+                specialTrack="unipolar"
+                onChange={onChangeEraserTolerance}
+                onCommit={onCommitEraser}
+                formatDisplay={(v) => `${v}%`}
+              />
+              <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+                <span>Exact match</span>
+                <span>Wide range</span>
+              </div>
+              <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
+                Raise the tolerance if the background has noise, a gradient or
+                JPEG compression artefacts. Lower it if the subject is being
+                removed by mistake.
+              </p>
+            </div>
+
+            {/* Apply / Revert */}
+            <button
+              onClick={() => onToggleBackgroundRemoval(!backgroundEraser.enabled)}
+              disabled={!hasImage}
+              className={`
+                w-full py-2.5 rounded text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-sm
+                ${
+                  !hasImage
+                    ? "bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed"
+                    : backgroundEraser.enabled
+                    ? "bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
+                    : "bg-[var(--accent)] hover:bg-[#256ee0] text-white"
+                }
+              `}
+            >
+              <span>{backgroundEraser.enabled ? "↺" : "✂"}</span>
+              {backgroundEraser.enabled ? "Restore Background" : "Remove Background"}
+            </button>
+
+            {backgroundEraser.enabled && (
+              <div className="flex items-start gap-2 px-2.5 py-2 rounded bg-[var(--accent-soft)] border border-[var(--accent)]/30 text-[11px] text-[var(--accent)]">
+                <span className="leading-snug">
+                  Background removed. Transparency is only kept when you export
+                  as PNG.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* 9. EXPORT PANEL */}
         {/* ======================================================== */}
         {activeTool === "export" && (
           <div className="space-y-4">
@@ -1246,6 +1380,16 @@ const RightPanel = memo(function RightPanel({
                 Export Image
               </span>
             </div>
+
+            {backgroundEraser.enabled && exportSettings.format !== "image/png" && (
+              <div className="flex items-start gap-2 px-2.5 py-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-400">
+                <span className="leading-snug">
+                  Transparency is not supported by{" "}
+                  {exportSettings.format.split("/")[1].toUpperCase()}. Switch to
+                  PNG to keep the removed background transparent.
+                </span>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <span className="text-xs text-[var(--text-muted)]">File Format</span>
