@@ -113,4 +113,4 @@ Please be respectful and constructive in issues and pull requests.
 
 ## License
 
-Add your license here (e.g. MIT).
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
