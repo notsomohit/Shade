@@ -45,6 +45,34 @@ const TOLERANCE_SPAN = 220;
 const SOFT_EDGE_START = 0.8; // fraction of maxDist where the ramp begins
 
 /**
+ * Rodrigues RGB Hue Rotation around diagonal (1,1,1)/sqrt(3)
+ */
+function rotateHue(r: number, g: number, b: number, angleRad: number): [number, number, number] {
+  const cosA = Math.cos(angleRad);
+  const sinA = Math.sin(angleRad);
+  const oneThird = 1.0 / 3.0;
+  const sqrtThird = Math.sqrt(oneThird);
+
+  const a00 = cosA + (1.0 - cosA) * oneThird;
+  const a01 = (1.0 - cosA) * oneThird - sqrtThird * sinA;
+  const a02 = (1.0 - cosA) * oneThird + sqrtThird * sinA;
+
+  const a10 = (1.0 - cosA) * oneThird + sqrtThird * sinA;
+  const a11 = cosA + (1.0 - cosA) * oneThird;
+  const a12 = (1.0 - cosA) * oneThird - sqrtThird * sinA;
+
+  const a20 = (1.0 - cosA) * oneThird - sqrtThird * sinA;
+  const a21 = (1.0 - cosA) * oneThird + sqrtThird * sinA;
+  const a22 = cosA + (1.0 - cosA) * oneThird;
+
+  return [
+    r * a00 + g * a01 + b * a02,
+    r * a10 + g * a11 + b * a12,
+    r * a20 + g * a21 + b * a22,
+  ];
+}
+
+/**
  * Professional Image Processing Engine
  * Computes non-destructive photometric adjustments at 60 FPS
  */
@@ -81,15 +109,20 @@ export function processPixelData(
   const sharpnessVal = adj.sharpness ?? 0;
   const blurVal = adj.blur ?? 0;
 
-  const needsSpatial = clarityVal !== 0 || sharpnessVal > 0 || blurVal > 0;
+  const hasSelectiveBlur = (selectivePoints || []).some(
+    (p) => p.blur?.enabled && (p.blur.intensity ?? 0) > 0
+  );
 
   let localLum: Float32Array | null = null;
   let blurredRGB: Uint8ClampedArray | null = null;
 
-  if (blurVal > 0) {
+  if (blurVal > 0 || hasSelectiveBlur) {
     // Fast 2-pass separable box blur on RGB
     blurredRGB = new Uint8ClampedArray(data);
-    const radius = Math.max(1, Math.min(15, Math.round((blurVal / 100) * 12)));
+    const maxBlur = hasSelectiveBlur
+      ? Math.max(blurVal, ...selectivePoints.map((p) => (p.blur?.enabled ? p.blur.intensity : 0)))
+      : blurVal;
+    const radius = Math.max(1, Math.min(20, Math.round((maxBlur / 100) * 14)));
     boxBlurRGBA(blurredRGB, width, height, radius);
   }
 
@@ -143,10 +176,13 @@ export function processPixelData(
       cy,
       radiusPx,
       radiusSq: radiusPx * radiusPx,
-      bOffset: (p.brightness / 100) * 40,
-      cFactor: 1 + (p.contrast / 100) * 0.65,
-      sMult: 1 + (p.saturation / 100) * 0.75,
-      strFactor: (p.structure / 100) * 0.5,
+      bOffset: ((p.brightness || 0) / 100) * 40,
+      cFactor: 1 + ((p.contrast || 0) / 100) * 0.65,
+      sMult: 1 + ((p.saturation || 0) / 100) * 0.75,
+      strFactor: ((p.structure || 0) / 100) * 0.5,
+      featherVal: (p.feather !== undefined ? p.feather : 50) / 100,
+      opacityVal: (p.opacity !== undefined ? p.opacity : 100) / 100,
+      hueRad: ((p.hueShift || 0) * Math.PI) / 180,
     };
   });
   const hasSelective = activePoints.length > 0;
@@ -360,7 +396,7 @@ export function processPixelData(
       b = lutMaster[cb];
     }
 
-    // 10. Snapseed-style Radial Selective Points
+    // 10. Comprehensive Selective Points (Local adjustments & Blur)
     if (hasSelective) {
       for (let j = 0; j < activePoints.length; j++) {
         const pt = activePoints[j];
@@ -368,27 +404,111 @@ export function processPixelData(
         const dy = py - pt.cy;
         const distSq = dx * dx + dy * dy;
 
-        if (distSq < pt.radiusSq) {
-          const dist = Math.sqrt(distSq);
-          const normDist = dist / pt.radiusPx;
-          const weight = Math.cos((normDist * Math.PI) / 2);
-          const w2 = weight * weight;
+        // Compute normalized distance
+        const dist = Math.sqrt(distSq);
+        const normDist = dist / pt.radiusPx;
 
-          if (pt.brightness !== 0) {
+        // Smooth cosine falloff modulated by feather
+        const feather = pt.featherVal;
+        const coreEnd = Math.max(0, 1.0 - feather);
+        let weight = 0;
+        if (normDist <= coreEnd) {
+          weight = 1.0;
+        } else if (normDist < 1.0) {
+          const t = (normDist - coreEnd) / Math.max(0.001, 1.0 - coreEnd);
+          weight = 0.5 * (1 + Math.cos(t * Math.PI));
+        }
+
+        const strength = pt.opacityVal * weight;
+
+        // Selective Blur handling (inside or inverted focus effect)
+        if (pt.blur?.enabled && (pt.blur.intensity || 0) > 0 && blurredRGB) {
+          const blurFactor = (pt.blur.intensity / 100);
+          const blurBlend = pt.blur.invert
+            ? (1.0 - weight) * pt.opacityVal * blurFactor
+            : strength * blurFactor;
+
+          if (blurBlend > 0) {
+            r += (blurredRGB[i] - r) * blurBlend;
+            g += (blurredRGB[i + 1] - g) * blurBlend;
+            b += (blurredRGB[i + 2] - b) * blurBlend;
+          }
+        }
+
+        if (distSq < pt.radiusSq && strength > 0) {
+          const w2 = strength;
+
+          // Exposure
+          if (pt.exposure && pt.exposure !== 0) {
+            const expM = Math.pow(2, (pt.exposure / 100) * 2.2 * w2);
+            r *= expM;
+            g *= expM;
+            b *= expM;
+          }
+
+          // Brightness
+          if (pt.brightness && pt.brightness !== 0) {
             const bDelta = pt.bOffset * w2;
             r += bDelta;
             g += bDelta;
             b += bDelta;
           }
 
-          if (pt.contrast !== 0) {
+          // Contrast
+          if (pt.contrast && pt.contrast !== 0) {
             const localC = 1 + (pt.cFactor - 1) * w2;
             r = localC * (r - 128) + 128;
             g = localC * (g - 128) + 128;
             b = localC * (b - 128) + 128;
           }
 
-          if (pt.saturation !== 0) {
+          // Highlights & Shadows
+          if ((pt.highlights && pt.highlights !== 0) || (pt.shadows && pt.shadows !== 0)) {
+            const curLum = Math.max(0, Math.min(1, (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255));
+            if (pt.highlights) {
+              const hW = smoothstep(0.4, 0.9, curLum);
+              const hD = (pt.highlights / 100) * 40 * hW * w2;
+              r += hD;
+              g += hD;
+              b += hD;
+            }
+            if (pt.shadows) {
+              const sW = 1.0 - smoothstep(0.1, 0.6, curLum);
+              const sD = (pt.shadows / 100) * 40 * sW * w2;
+              r += sD;
+              g += sD;
+              b += sD;
+            }
+          }
+
+          // Temperature (Warmth) & Tint
+          if (pt.temperature && pt.temperature !== 0) {
+            const tf = (pt.temperature / 100) * w2;
+            if (tf > 0) {
+              r += tf * 24;
+              g += tf * 8;
+              b -= tf * 20;
+            } else {
+              r += tf * 16;
+              g += tf * 4;
+              b -= tf * 24;
+            }
+          }
+          if (pt.tint && pt.tint !== 0) {
+            const tinf = (pt.tint / 100) * w2;
+            if (tinf > 0) {
+              r += tinf * 12;
+              g -= tinf * 18;
+              b += tinf * 12;
+            } else {
+              r -= tinf * 12;
+              g += tinf * 18;
+              b -= tinf * 12;
+            }
+          }
+
+          // Saturation
+          if (pt.saturation && pt.saturation !== 0) {
             const localSat = 1 + (pt.sMult - 1) * w2;
             const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
             r = gray + (r - gray) * localSat;
@@ -396,12 +516,34 @@ export function processPixelData(
             b = gray + (b - gray) * localSat;
           }
 
-          if (pt.structure !== 0) {
+          // Vibrance
+          if (pt.vibrance && pt.vibrance !== 0) {
+            const maxC = Math.max(r, g, b);
+            const minC = Math.min(r, g, b);
+            const curSat = maxC === 0 ? 0 : (maxC - minC) / maxC;
+            const vMult = 1 + (pt.vibrance / 100) * (1.0 - curSat) * 1.2 * w2;
+            const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            r = gray + (r - gray) * vMult;
+            g = gray + (g - gray) * vMult;
+            b = gray + (b - gray) * vMult;
+          }
+
+          // Sharpness / Structure
+          if ((pt.structure && pt.structure !== 0) || (pt.sharpness && pt.sharpness !== 0)) {
             const curL = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-            const sDelta = (curL - 128) * pt.strFactor * w2;
+            const amt = ((pt.structure || 0) * 0.4 + (pt.sharpness || 0) * 0.6) / 100;
+            const sDelta = (curL - 128) * amt * w2;
             r += sDelta;
             g += sDelta;
             b += sDelta;
+          }
+
+          // Hue Shift
+          if (pt.hueShift && pt.hueShift !== 0) {
+            const [hr, hg, hb] = rotateHue(r, g, b, pt.hueRad * w2);
+            r = hr;
+            g = hg;
+            b = hb;
           }
         }
       }
