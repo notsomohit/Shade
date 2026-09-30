@@ -44,6 +44,13 @@ export interface CurvesData {
   blue: CurvePoint[];
 }
 
+export interface SelectiveBlurConfig {
+  enabled: boolean;
+  type: "gaussian" | "motion" | "lens";
+  intensity: number; // 0 to 100
+  invert: boolean; // if true, blurs outside the region (focus effect)
+}
+
 export interface SelectivePoint {
   id: string;
   x: number; // 0 to 1 normalized
@@ -53,6 +60,18 @@ export interface SelectivePoint {
   contrast: number; // -100 to 100
   saturation: number; // -100 to 100
   structure: number; // -100 to 100
+  // New extended tuning features (all optional with defaults)
+  exposure?: number; // -100 to 100
+  highlights?: number; // -100 to 100
+  shadows?: number; // -100 to 100
+  temperature?: number; // -100 to 100 (warmth)
+  tint?: number; // -100 to 100
+  vibrance?: number; // -100 to 100
+  sharpness?: number; // 0 to 100
+  hueShift?: number; // -180 to 180
+  feather?: number; // 0 to 100 (edge softness)
+  opacity?: number; // 0 to 100 (strength)
+  blur?: SelectiveBlurConfig;
 }
 
 export type PresetCategory =
@@ -104,6 +123,25 @@ export interface PresetFilter {
   adjustments?: Partial<Adjustments>;
 }
 
+export interface TextStroke {
+  color: string;
+  width: number; // px
+}
+
+export interface TextGlow {
+  color: string;
+  blur: number; // px
+  intensity: number; // 0-100
+}
+
+export interface TextShadow {
+  color: string;
+  offsetX: number; // px
+  offsetY: number; // px
+  blur: number; // px
+  opacity: number; // 0-100
+}
+
 export interface TextOverlay {
   id: string;
   text: string;
@@ -114,6 +152,25 @@ export interface TextOverlay {
   x: number; // normalized 0 to 1
   y: number; // normalized 0 to 1
   visible: boolean;
+  // New styling fields (all optional for backward compat)
+  fontWeight?: "normal" | "bold" | "bolder";
+  textAlign?: "left" | "center" | "right";
+  rotation?: number; // degrees
+  opacity?: number; // 0-100
+  stroke?: TextStroke;
+  outline?: TextStroke; // separate outer outline
+  glow?: TextGlow;
+  shadow?: TextShadow;
+  skewX?: number; // degrees
+  skewY?: number; // degrees
+  curl?: number; // -100 to 100, arc bend
+}
+
+/** Configuration for creating a blank solid-color canvas (no image). */
+export interface SolidCanvasConfig {
+  color: string; // hex
+  width: number;
+  height: number;
 }
 
 export interface DoubleExposureData {
@@ -126,6 +183,7 @@ export interface LayerItem {
   id: string;
   name: string;
   visible: boolean;
+  locked?: boolean;
   type: "image" | "text" | "adjustment" | "double-exposure";
   textData?: TextOverlay;
   doubleExposureData?: DoubleExposureData;

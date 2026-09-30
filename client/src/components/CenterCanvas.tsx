@@ -40,6 +40,7 @@ interface CenterCanvasProps {
   onImageSelect: (file: File) => void;
   onApplyCrop?: (crop: { x: number; y: number; width: number; height: number }) => void;
   renderPipeline: () => void;
+  showSelectiveMarkers?: boolean;
 }
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
@@ -53,6 +54,56 @@ const TRANSPARENCY_CHECKER =
   "conic-gradient(from 90deg at 1px 1px, rgba(255,255,255,0.10) 25%, transparent 0) 0 0/16px 16px";
 
 type CropHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w" | "move";
+
+/**
+ * Helper to build live CSS styling for text overlays
+ */
+function getTextStyle(t: TextOverlay): React.CSSProperties {
+  const style: React.CSSProperties = {
+    position: "absolute",
+    left: `${t.x * 100}%`,
+    top: `${t.y * 100}%`,
+    fontFamily: t.fontFamily || "inherit",
+    fontSize: `${t.fontSize}px`,
+    fontWeight: t.fontWeight || "bold",
+    textAlign: t.textAlign || "left",
+    color: t.color,
+    opacity: (t.opacity !== undefined ? t.opacity : 100) / 100,
+    lineHeight: 1,
+  };
+
+  const transforms: string[] = [];
+  if (t.rotation) transforms.push(`rotate(${t.rotation}deg)`);
+  if (t.skewX || t.skewY) transforms.push(`skew(${t.skewX || 0}deg, ${t.skewY || 0}deg)`);
+  if (transforms.length > 0) {
+    style.transform = transforms.join(" ");
+  }
+
+  if (t.stroke) {
+    (style as any).WebkitTextStroke = `${t.stroke.width}px ${t.stroke.color}`;
+  }
+
+  const shadows: string[] = [];
+  if (t.glow) {
+    const blur = t.glow.blur || 12;
+    shadows.push(`0 0 ${blur}px ${t.glow.color}`, `0 0 ${blur * 1.6}px ${t.glow.color}`);
+  }
+  if (t.shadow) {
+    shadows.push(
+      `${t.shadow.offsetX || 3}px ${t.shadow.offsetY || 3}px ${t.shadow.blur || 6}px ${t.shadow.color}`
+    );
+  }
+  if (t.outline) {
+    const w = t.outline.width || 2;
+    const c = t.outline.color || "#ffffff";
+    shadows.push(`-${w}px -${w}px 0 ${c}, ${w}px -${w}px 0 ${c}, -${w}px ${w}px 0 ${c}, ${w}px ${w}px 0 ${c}`);
+  }
+  if (shadows.length > 0) {
+    style.textShadow = shadows.join(", ");
+  }
+
+  return style;
+}
 
 const CenterCanvas = memo(function CenterCanvas({
   canvasRef,
@@ -80,9 +131,14 @@ const CenterCanvas = memo(function CenterCanvas({
   onImageSelect,
   onApplyCrop,
   renderPipeline,
+  showSelectiveMarkers = true,
 }: CenterCanvasProps) {
   const textInteractingRef = useRef(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [snapGuides, setSnapGuides] = useState<{ x: number | null; y: number | null }>({
+    x: null,
+    y: null,
+  });
 
   // Pan offset state for moving canvas view
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -284,6 +340,11 @@ const CenterCanvas = memo(function CenterCanvas({
     curY: number
   ) => {
     e.stopPropagation();
+    const targetLayer = layers.find((l) => l.id === id);
+    if (targetLayer?.locked) {
+      onSelectLayer(id);
+      return;
+    }
     textInteractingRef.current = true;
     onSelectLayer(id);
 
@@ -309,6 +370,8 @@ const CenterCanvas = memo(function CenterCanvas({
     fontSize: number
   ) => {
     e.stopPropagation();
+    const targetLayer = layers.find((l) => l.id === id);
+    if (targetLayer?.locked) return;
     textInteractingRef.current = true;
 
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
@@ -454,14 +517,28 @@ const CenterCanvas = memo(function CenterCanvas({
           }
         }
 
-        // Text Dragging
+        // Text Dragging with Snap Helpers
         if (textDragRef.current && canvasWrapperRef.current) {
           const rect = canvasWrapperRef.current.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             const deltaX = (clientX - textDragRef.current.startX) / rect.width;
             const deltaY = (clientY - textDragRef.current.startY) / rect.height;
-            const nextX = Math.max(0, Math.min(0.95, textDragRef.current.origX + deltaX));
-            const nextY = Math.max(0, Math.min(0.95, textDragRef.current.origY + deltaY));
+            let nextX = Math.max(0, Math.min(0.95, textDragRef.current.origX + deltaX));
+            let nextY = Math.max(0, Math.min(0.95, textDragRef.current.origY + deltaY));
+
+            // Smart snap to center (0.5) and edges
+            let sx: number | null = null;
+            let sy: number | null = null;
+            if (Math.abs(nextX - 0.5) < 0.02) {
+              nextX = 0.5;
+              sx = 0.5;
+            }
+            if (Math.abs(nextY - 0.5) < 0.02) {
+              nextY = 0.5;
+              sy = 0.5;
+            }
+            setSnapGuides({ x: sx, y: sy });
+
             textDragRef.current.currentX = nextX;
             textDragRef.current.currentY = nextY;
 
@@ -532,6 +609,7 @@ const CenterCanvas = memo(function CenterCanvas({
     const handlePointerUp = () => {
       isDraggingDividerRef.current = false;
       isPanningRef.current = false;
+      setSnapGuides({ x: null, y: null });
 
       // Commit Crop final coordinates
       if (cropDragRef.current) {
@@ -737,16 +815,8 @@ const CenterCanvas = memo(function CenterCanvas({
                 return (
                   <div
                     key={layer.id}
-                    style={{
-                      position: "absolute",
-                      left: `${t.x * 100}%`,
-                      top: `${t.y * 100}%`,
-                      fontFamily: t.fontFamily || "inherit",
-                      fontSize: `${t.fontSize}px`,
-                      color: t.color,
-                      lineHeight: 1,
-                    }}
-                    className="p-1 font-bold whitespace-nowrap select-none pointer-events-none"
+                    style={getTextStyle(t)}
+                    className="p-1 whitespace-nowrap select-none pointer-events-none"
                   >
                     {t.text}
                   </div>
@@ -797,6 +867,20 @@ const CenterCanvas = memo(function CenterCanvas({
             className="block w-full h-full object-contain pointer-events-none"
           />
 
+          {/* Visual Snap Alignment Guide Lines */}
+          {snapGuides.x !== null && (
+            <div
+              style={{ left: `${snapGuides.x * 100}%` }}
+              className="absolute top-0 bottom-0 w-[1.5px] bg-[#38bdf8] pointer-events-none z-30 shadow-[0_0_6px_#38bdf8]"
+            />
+          )}
+          {snapGuides.y !== null && (
+            <div
+              style={{ top: `${snapGuides.y * 100}%` }}
+              className="absolute left-0 right-0 h-[1.5px] bg-[#38bdf8] pointer-events-none z-30 shadow-[0_0_6px_#38bdf8]"
+            />
+          )}
+
           {/* Interactive Text Layers Overlay */}
           {layers
             .filter((l) => l.type === "text" && l.textData && l.visible)
@@ -809,17 +893,10 @@ const CenterCanvas = memo(function CenterCanvas({
                   key={layer.id}
                   onMouseDown={(e) => handleTextPointerDown(e, layer.id, t.x, t.y)}
                   onTouchStart={(e) => handleTextPointerDown(e, layer.id, t.x, t.y)}
-                  style={{
-                    position: "absolute",
-                    left: `${t.x * 100}%`,
-                    top: `${t.y * 100}%`,
-                    fontFamily: t.fontFamily || "inherit",
-                    fontSize: `${t.fontSize}px`,
-                    color: t.color,
-                    lineHeight: 1,
-                  }}
+                  style={getTextStyle(t)}
                   className={`
-                    cursor-move select-none p-1 font-bold whitespace-nowrap will-change-transform
+                    select-none p-1 whitespace-nowrap will-change-transform
+                    ${layer.locked ? "cursor-not-allowed" : "cursor-move"}
                     ${
                       isSelected
                         ? "ring-2 ring-[#3b82f6] ring-offset-1 ring-offset-black/50 bg-[#3b82f6]/10 rounded shadow-lg"
@@ -830,7 +907,7 @@ const CenterCanvas = memo(function CenterCanvas({
                   {t.text}
 
                   {/* Corner Resize Handle */}
-                  {isSelected && (
+                  {isSelected && !layer.locked && (
                     <div
                       onMouseDown={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
                       onTouchStart={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
@@ -843,6 +920,7 @@ const CenterCanvas = memo(function CenterCanvas({
 
           {/* Interactive Selective Control Points Overlay */}
           {activeTool === "selective" &&
+            showSelectiveMarkers &&
             selectivePoints.map((pt, idx) => {
               const isSelected = selectedSelectivePointId === pt.id;
 

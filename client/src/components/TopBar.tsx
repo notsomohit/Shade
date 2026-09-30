@@ -16,6 +16,7 @@ interface TopBarProps {
   onChangeGridMode?: (mode: GridMode) => void;
   onExport: () => void;
   onFileSelect?: (file: File) => void;
+  onNewCanvas?: () => void;
 }
 
 const TopBar = memo(function TopBar({
@@ -31,6 +32,7 @@ const TopBar = memo(function TopBar({
   onChangeGridMode,
   onExport,
   onFileSelect,
+  onNewCanvas,
 }: TopBarProps) {
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -100,6 +102,20 @@ const TopBar = memo(function TopBar({
             className="hidden"
           />
         </label>
+
+        {/* New Canvas Button */}
+        {onNewCanvas && (
+          <button
+            onClick={onNewCanvas}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-[var(--text-muted)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-app)] border border-[var(--border)] hover:border-[var(--accent)]/50 rounded cursor-pointer transition-all duration-150 shadow-sm"
+            title="New blank canvas"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            <span className="font-medium">New Canvas</span>
+          </button>
+        )}
       </div>
 
       {/* Right: Compare (if loaded), Grid Toggle, Undo/Redo, and Solid Blue Export */}
