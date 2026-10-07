@@ -210,6 +210,26 @@ const CenterCanvas = memo(function CenterCanvas({
   const zoomScale = zoom / 100;
   const imageAspectRatio = imageData ? `${imageData.width} / ${imageData.height}` : "16 / 10";
 
+  // Track rendered canvas height for proportional text overlay scaling
+  const [containerHeight, setContainerHeight] = useState<number>(600);
+
+  useEffect(() => {
+    const el = canvasWrapperRef.current || compareContainerRef.current;
+    if (!el) return;
+    if (el.clientHeight > 0) {
+      setContainerHeight(el.clientHeight);
+    }
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 0) {
+          setContainerHeight(entry.contentRect.height);
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasImage, compareMode]);
+
   // Trigger render when image mounts or compare toggles
   useEffect(() => {
     if (hasImage) {
@@ -550,19 +570,25 @@ const CenterCanvas = memo(function CenterCanvas({
         }
 
         // Text Resizing
-        if (textResizeRef.current) {
+        if (textResizeRef.current && canvasWrapperRef.current) {
+          const rect = canvasWrapperRef.current.getBoundingClientRect();
+          const containerH = rect.height || containerHeight || 600;
           const deltaX = clientX - textResizeRef.current.startX;
           const deltaY = clientY - textResizeRef.current.startY;
-          const distDelta = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-          const sign = deltaX + deltaY > 0 ? 1 : -1;
-          const newSize = Math.max(
-            12,
-            Math.min(240, Math.round(textResizeRef.current.origSize + sign * distDelta * 0.4))
+          const distDelta = (deltaX + deltaY) / containerH;
+          const origFraction =
+            textResizeRef.current.origSize > 1
+              ? textResizeRef.current.origSize / 800
+              : textResizeRef.current.origSize;
+          const nextFraction = Math.max(
+            0.015,
+            Math.min(0.5, origFraction + distDelta * 0.4)
           );
-          textResizeRef.current.currentSize = newSize;
+          textResizeRef.current.currentSize = nextFraction;
 
           if (textResizeRef.current.domEl) {
-            textResizeRef.current.domEl.style.fontSize = `${newSize}px`;
+            const px = Math.max(8, Math.round(nextFraction * containerH));
+            textResizeRef.current.domEl.style.fontSize = `${px}px`;
           }
         }
 
@@ -812,6 +838,8 @@ const CenterCanvas = memo(function CenterCanvas({
               .filter((l) => l.type === "text" && l.textData && l.visible)
               .map((layer) => {
                 const t = layer.textData!;
+                const normFraction = t.fontSize > 1 ? t.fontSize / 800 : t.fontSize;
+                const computedPx = Math.max(8, Math.round(normFraction * containerHeight));
                 return (
                   <div
                     key={layer.id}
@@ -887,6 +915,8 @@ const CenterCanvas = memo(function CenterCanvas({
             .map((layer) => {
               const t = layer.textData!;
               const isSelected = selectedLayerId === layer.id;
+              const normFraction = t.fontSize > 1 ? t.fontSize / 800 : t.fontSize;
+              const computedPx = Math.max(8, Math.round(normFraction * containerHeight));
 
               return (
                 <div
@@ -909,8 +939,8 @@ const CenterCanvas = memo(function CenterCanvas({
                   {/* Corner Resize Handle */}
                   {isSelected && !layer.locked && (
                     <div
-                      onMouseDown={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
-                      onTouchStart={(e) => handleResizeHandleDown(e, layer.id, t.fontSize)}
+                      onMouseDown={(e) => handleResizeHandleDown(e, layer.id, normFraction)}
+                      onTouchStart={(e) => handleResizeHandleDown(e, layer.id, normFraction)}
                       className="absolute -right-2 -bottom-2 w-3.5 h-3.5 bg-[#3b82f6] rounded-full border border-black cursor-se-resize shadow-md"
                     />
                   )}
