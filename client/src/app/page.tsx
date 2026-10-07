@@ -13,6 +13,9 @@ import {
   CurvesData,
   SelectivePoint,
   PresetLayer,
+  BackgroundEraserSettings,
+  DEFAULT_BACKGROUND_ERASER,
+  SolidCanvasConfig,
 } from "@/types/editor";
 import TopBar from "@/components/TopBar";
 import LeftToolbar from "@/components/LeftToolbar";
@@ -20,6 +23,7 @@ import CenterCanvas from "@/components/CenterCanvas";
 import RightPanel from "@/components/RightPanel";
 import BottomBar from "@/components/BottomBar";
 import ShortcutsOverlay from "@/components/ShortcutsOverlay";
+import NewCanvasDialog from "@/components/NewCanvasDialog";
 import { DEFAULT_CURVES } from "@/components/CurvesTool";
 import { useToast } from "@/components/Toast";
 import { calculateEffectiveAdjustments } from "@/constants/presets";
@@ -32,6 +36,7 @@ interface HistoryEntry {
   selectivePoints: SelectivePoint[];
   layers: LayerItem[];
   transform: TransformState;
+  backgroundEraser: BackgroundEraserSettings;
 }
 
 const DEFAULT_TRANSFORM: TransformState = {
@@ -50,6 +55,9 @@ export default function Home() {
     canvasRef,
     beforeCanvasRef,
     loadImage,
+    loadSolidCanvas,
+    commitCanvasAsBaseImage,
+    bakeTextLayerIntoBase,
     updateAdjustments,
     updateCurves,
     updateSelectivePoints,
@@ -57,6 +65,8 @@ export default function Home() {
     updateTransform,
     updateGridMode,
     updateLayers,
+    updateBackgroundEraser,
+    sampleCanvasColor,
     samplePixelWhiteBalance,
     exportImage,
     filterSettings,
@@ -71,6 +81,10 @@ export default function Home() {
   const [compareMode, setCompareMode] = useState(false);
   const [gridMode, setGridMode] = useState<GridMode>("none");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showNewCanvasDialog, setShowNewCanvasDialog] = useState(false);
+  // Track whether the canvas is a solid color (no uploaded file)
+  const [isSolidCanvas, setIsSolidCanvas] = useState(false);
+  const [solidCanvasColor, setSolidCanvasColor] = useState("#1e2d4a");
 
   // Responsive & Sheet States
   const [isMobile, setIsMobile] = useState(false);
@@ -84,8 +98,13 @@ export default function Home() {
   const [curves, setCurves] = useState<CurvesData>({ ...DEFAULT_CURVES });
   const [selectivePoints, setSelectivePoints] = useState<SelectivePoint[]>([]);
   const [selectedSelectivePointId, setSelectedSelectivePointId] = useState<string | null>(null);
+  const [showSelectiveMarkers, setShowSelectiveMarkers] = useState(true);
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
   const [transform, setTransform] = useState<TransformState>({ ...DEFAULT_TRANSFORM });
+  const [backgroundEraser, setBackgroundEraser] = useState<BackgroundEraserSettings>({
+    ...DEFAULT_BACKGROUND_ERASER,
+  });
+  const [isEraserPickerActive, setIsEraserPickerActive] = useState(false);
 
   // Layers & Export
   const [layers, setLayers] = useState<LayerItem[]>([]);
@@ -115,6 +134,11 @@ export default function Home() {
     updateAdjustments(effectiveAdjustments);
   }, [effectiveAdjustments, updateAdjustments]);
 
+  // Sync Background Eraser to canvas pipeline
+  useEffect(() => {
+    updateBackgroundEraser(backgroundEraser);
+  }, [backgroundEraser, updateBackgroundEraser]);
+
   // Handle responsive viewport detection (< 640px = Mobile)
   useEffect(() => {
     const checkViewport = () => {
@@ -139,6 +163,7 @@ export default function Home() {
         selectivePoints: newEntry.selectivePoints ?? selectivePoints,
         layers: newEntry.layers ?? layers,
         transform: newEntry.transform ?? transform,
+        backgroundEraser: newEntry.backgroundEraser ?? backgroundEraser,
       };
 
       setHistory((prev) => {
@@ -155,6 +180,7 @@ export default function Home() {
       selectivePoints,
       layers,
       transform,
+      backgroundEraser,
       historyIndex,
     ]
   );
@@ -180,6 +206,7 @@ export default function Home() {
         updateTransform(prev.transform);
       }
 
+      setBackgroundEraser(prev.backgroundEraser ?? { ...DEFAULT_BACKGROUND_ERASER });
       setHistoryIndex(historyIndex - 1);
       showToast("Undo", "info");
     }
@@ -215,6 +242,7 @@ export default function Home() {
         updateTransform(next.transform);
       }
 
+      setBackgroundEraser(next.backgroundEraser ?? { ...DEFAULT_BACKGROUND_ERASER });
       setHistoryIndex(historyIndex + 1);
       showToast("Redo", "info");
     }
@@ -228,6 +256,67 @@ export default function Home() {
     updateTransform,
     showToast,
   ]);
+
+  /**
+   * Solid Color Canvas handler
+   */
+  const handleCreateSolidCanvas = useCallback(
+    async (config: SolidCanvasConfig) => {
+      try {
+        setIsProcessing(true);
+        const img = await loadSolidCanvas(config.color, config.width, config.height);
+        setImageData({
+          name: `Canvas ${config.width}×${config.height}`,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          aspectRatio: img.naturalWidth / img.naturalHeight,
+        });
+
+        const initialLayers: LayerItem[] = [
+          {
+            id: "base_image",
+            name: "Background",
+            visible: true,
+            type: "image",
+          },
+        ];
+
+        setAdjustments({ ...DEFAULT_ADJUSTMENTS });
+        setPresetLayers([]);
+        setCurves({ ...DEFAULT_CURVES });
+        setSelectivePoints([]);
+        setSelectedSelectivePointId(null);
+        setTransform({ ...DEFAULT_TRANSFORM });
+        setBackgroundEraser({ ...DEFAULT_BACKGROUND_ERASER });
+        setIsEraserPickerActive(false);
+        setLayers(initialLayers);
+        updateLayers(initialLayers);
+        setHasImage(true);
+        setIsSolidCanvas(true);
+        setSolidCanvasColor(config.color);
+
+        const initialEntry: HistoryEntry = {
+          adjustments: { ...DEFAULT_ADJUSTMENTS },
+          presetLayers: [],
+          filter: { id: "original", name: "Original", intensity: 100 },
+          curves: { ...DEFAULT_CURVES },
+          selectivePoints: [],
+          layers: initialLayers,
+          transform: { ...DEFAULT_TRANSFORM },
+          backgroundEraser: { ...DEFAULT_BACKGROUND_ERASER },
+        };
+        setHistory([initialEntry]);
+        setHistoryIndex(0);
+
+        showToast(`Created ${config.width}×${config.height} canvas`, "success");
+      } catch {
+        showToast("Failed to create canvas", "error");
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [loadSolidCanvas, updateLayers, showToast]
+  );
 
   /**
    * Image file upload handler
@@ -259,6 +348,8 @@ export default function Home() {
         setSelectivePoints([]);
         setSelectedSelectivePointId(null);
         setTransform({ ...DEFAULT_TRANSFORM });
+        setBackgroundEraser({ ...DEFAULT_BACKGROUND_ERASER });
+        setIsEraserPickerActive(false);
         setLayers(initialLayers);
         updateLayers(initialLayers);
         setHasImage(true);
@@ -272,6 +363,7 @@ export default function Home() {
           selectivePoints: [],
           layers: initialLayers,
           transform: { ...DEFAULT_TRANSFORM },
+          backgroundEraser: { ...DEFAULT_BACKGROUND_ERASER },
         };
         setHistory([initialEntry]);
         setHistoryIndex(0);
@@ -486,6 +578,26 @@ export default function Home() {
     [selectivePoints, selectedSelectivePointId, updateSelectivePoints, pushHistory, showToast]
   );
 
+  const handleDuplicateSelectivePoint = useCallback(
+    (id: string) => {
+      const target = selectivePoints.find((p) => p.id === id);
+      if (!target) return;
+      const newPt: SelectivePoint = {
+        ...target,
+        id: `sp_${Date.now()}`,
+        x: Math.min(0.95, target.x + 0.05),
+        y: Math.min(0.95, target.y + 0.05),
+      };
+      const next = [...selectivePoints, newPt];
+      setSelectivePoints(next);
+      setSelectedSelectivePointId(newPt.id);
+      updateSelectivePoints(next);
+      pushHistory({ selectivePoints: next });
+      showToast("Duplicated control point", "info");
+    },
+    [selectivePoints, updateSelectivePoints, pushHistory, showToast]
+  );
+
   /**
    * Eyedropper White Balance Handler
    */
@@ -547,6 +659,68 @@ export default function Home() {
   }, [transform, updateTransform, pushHistory, showToast]);
 
   /**
+   * Background Eraser Handlers
+   */
+  const handleChangeEraserColor = useCallback(
+    (color: string) => {
+      const next = { ...backgroundEraser, color };
+      setBackgroundEraser(next);
+      updateBackgroundEraser(next);
+    },
+    [backgroundEraser, updateBackgroundEraser]
+  );
+
+  const handleChangeEraserTolerance = useCallback(
+    (tolerance: number) => {
+      const next = { ...backgroundEraser, tolerance };
+      setBackgroundEraser(next);
+      updateBackgroundEraser(next);
+    },
+    [backgroundEraser, updateBackgroundEraser]
+  );
+
+  const handleCommitEraser = useCallback(() => {
+    pushHistory({ backgroundEraser });
+  }, [backgroundEraser, pushHistory]);
+
+  const handleSampleEraserColor = useCallback(
+    (normX: number, normY: number) => {
+      const hex = sampleCanvasColor(normX, normY);
+      setIsEraserPickerActive(false);
+      if (!hex) {
+        showToast("No colour to sample at that point", "info");
+        return;
+      }
+      handleChangeEraserColor(hex);
+      showToast(`Sampled background colour ${hex.toUpperCase()}`, "success");
+    },
+    [sampleCanvasColor, handleChangeEraserColor, showToast]
+  );
+
+  const handleToggleBackgroundRemoval = useCallback(
+    (enabled: boolean) => {
+      const next = { ...backgroundEraser, enabled };
+      setBackgroundEraser(next);
+      updateBackgroundEraser(next);
+      pushHistory({ backgroundEraser: next });
+      showToast(
+        enabled ? "Background removed" : "Background restored",
+        enabled ? "success" : "info"
+      );
+    },
+    [backgroundEraser, updateBackgroundEraser, pushHistory, showToast]
+  );
+
+  const handleResetBackgroundEraser = useCallback(() => {
+    const next = { ...DEFAULT_BACKGROUND_ERASER };
+    setBackgroundEraser(next);
+    updateBackgroundEraser(next);
+    setIsEraserPickerActive(false);
+    pushHistory({ backgroundEraser: next });
+    showToast("Background eraser reset", "info");
+  }, [updateBackgroundEraser, pushHistory, showToast]);
+
+  /**
    * Double Exposure Layer Handler
    */
   const handleAddDoubleExposureLayer = useCallback(
@@ -598,7 +772,72 @@ export default function Home() {
   );
 
   /**
-   * Text Layer Handlers (Stored in image-normalized units)
+   * Commit Presets into master Base Image (Feature 1)
+   */
+  const handleCommitPresets = useCallback(async () => {
+    try {
+      setIsProcessing(true);
+      const resultImg = await commitCanvasAsBaseImage();
+      if (resultImg) {
+        setPresetLayers([]);
+        setAdjustments({ ...DEFAULT_ADJUSTMENTS });
+        setCurves({ ...DEFAULT_CURVES });
+        updateCurves({ ...DEFAULT_CURVES });
+        setSelectivePoints([]);
+        updateSelectivePoints([]);
+        const nextEntry: HistoryEntry = {
+          adjustments: { ...DEFAULT_ADJUSTMENTS },
+          presetLayers: [],
+          filter: { id: "original", name: "Original", intensity: 100 },
+          curves: { ...DEFAULT_CURVES },
+          selectivePoints: [],
+          layers,
+          transform,
+          backgroundEraser: { ...DEFAULT_BACKGROUND_ERASER },
+        };
+        pushHistory(nextEntry);
+        showToast("Preset committed into base image", "success");
+      }
+    } catch {
+      showToast("Failed to commit preset", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [
+    commitCanvasAsBaseImage,
+    layers,
+    transform,
+    pushHistory,
+    updateCurves,
+    updateSelectivePoints,
+    showToast,
+  ]);
+
+  /**
+   * Bake Text Layer directly into master Base Image (Feature 2)
+   */
+  const handleBakeTextLayer = useCallback(
+    async (layerId: string) => {
+      try {
+        setIsProcessing(true);
+        const result = await bakeTextLayerIntoBase(layerId);
+        if (result) {
+          setLayers(result.remainingLayers);
+          setSelectedLayerId(null);
+          pushHistory({ layers: result.remainingLayers });
+          showToast("Text baked into base image", "success");
+        }
+      } catch {
+        showToast("Failed to bake text layer", "error");
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [bakeTextLayerIntoBase, pushHistory, showToast]
+  );
+
+  /**
+   * Text Layer Handlers
    */
   const handleAddTextLayer = useCallback(
     (
@@ -606,7 +845,8 @@ export default function Home() {
       fontSize: number,
       color: string,
       fontFamily: string,
-      category: "standard" | "design" | "artsy" | "display"
+      category: "standard" | "design" | "artsy" | "display",
+      extraStyles?: any
     ) => {
       // Store font size as fraction of image height (0.015 to 0.4, default ~0.06 = ~48px on 800px image)
       const normFontSize = fontSize > 1 ? fontSize / 800 : fontSize;
@@ -626,6 +866,7 @@ export default function Home() {
           x: 0.35,
           y: 0.45,
           visible: true,
+          ...extraStyles,
         },
       };
 
@@ -640,10 +881,7 @@ export default function Home() {
   );
 
   const handleUpdateTextLayer = useCallback(
-    (
-      id: string,
-      updates: Partial<{ text: string; fontSize: number; color: string; fontFamily: string }>
-    ) => {
+    (id: string, updates: Partial<any>) => {
       const next = layers.map((l) =>
         l.id === id && l.textData
           ? {
@@ -706,6 +944,18 @@ export default function Home() {
       pushHistory({ layers: next });
     },
     [layers, updateLayers, pushHistory]
+  );
+
+  const handleToggleLayerLock = useCallback(
+    (id: string) => {
+      const next = layers.map((l) => (l.id === id ? { ...l, locked: !l.locked } : l));
+      setLayers(next);
+      updateLayers(next);
+      pushHistory({ layers: next });
+      const target = next.find((l) => l.id === id);
+      showToast(target?.locked ? "Layer locked" : "Layer unlocked", "info");
+    },
+    [layers, updateLayers, pushHistory, showToast]
   );
 
   const handleDeleteLayer = useCallback(
@@ -827,6 +1077,7 @@ export default function Home() {
       if (e.key === "Escape") {
         setShowShortcutsModal(false);
         setIsEyedropperActive(false);
+        setIsEraserPickerActive(false);
         setSelectedLayerId(null);
         setSelectedSelectivePointId(null);
         setMobileSheetOpen(false);
@@ -902,6 +1153,11 @@ export default function Home() {
           setRightPanelCollapsed(false);
           if (isMobile) setMobileSheetOpen(true);
           break;
+        case "b":
+          setActiveTool("eraser");
+          setRightPanelCollapsed(false);
+          if (isMobile) setMobileSheetOpen(true);
+          break;
         case "e":
           setActiveTool("export");
           setRightPanelCollapsed(false);
@@ -966,6 +1222,7 @@ export default function Home() {
         }}
         onExport={handleTriggerExport}
         onFileSelect={handleImageSelect}
+        onNewCanvas={() => setShowNewCanvasDialog(true)}
       />
 
       {/* Main Studio Workspace */}
@@ -990,6 +1247,7 @@ export default function Home() {
           selectivePoints={selectivePoints}
           selectedSelectivePointId={selectedSelectivePointId}
           isEyedropperActive={isEyedropperActive}
+          isEraserPickerActive={isEraserPickerActive}
           transformState={transform}
           onSelectLayer={(id) => {
             setSelectedLayerId(id);
@@ -1004,6 +1262,7 @@ export default function Home() {
           onAddSelectivePointAt={handleAddSelectivePointAt}
           onUpdateSelectivePoint={handleUpdateSelectivePoint}
           onSampleWhiteBalance={handleSampleWhiteBalance}
+          onSampleEraserColor={handleSampleEraserColor}
           onUpdateTextPosition={handleUpdateTextPosition}
           onUpdateTextFontSize={handleUpdateTextFontSize}
           onDeleteLayer={handleDeleteLayer}
@@ -1011,6 +1270,7 @@ export default function Home() {
           onImageSelect={handleImageSelect}
           onApplyCrop={handleApplyCrop}
           renderPipeline={renderPipeline}
+          showSelectiveMarkers={showSelectiveMarkers}
         />
 
         {/* Right Adjustment / Tool Panel (Desktop >= 640px) */}
@@ -1029,6 +1289,9 @@ export default function Home() {
             onAddSelectivePoint={handleAddSelectivePoint}
             onUpdateSelectivePoint={handleUpdateSelectivePoint}
             onDeleteSelectivePoint={handleDeleteSelectivePoint}
+            onDuplicateSelectivePoint={handleDuplicateSelectivePoint}
+            showSelectiveMarkers={showSelectiveMarkers}
+            onToggleSelectiveMarkers={() => setShowSelectiveMarkers((prev) => !prev)}
             isEyedropperActive={isEyedropperActive}
             onToggleEyedropper={() => setIsEyedropperActive((prev) => !prev)}
             presetLayers={presetLayers}
@@ -1037,6 +1300,7 @@ export default function Home() {
             onTogglePresetLayerVisibility={handleTogglePresetLayerVisibility}
             onDeletePresetLayer={handleDeletePresetLayer}
             onClearPresetLayers={handleClearPresetLayers}
+            onCommitPresets={handleCommitPresets}
             transformState={transform}
             onUpdateTransform={handleUpdateTransform}
             onResetCrop={handleResetCrop}
@@ -1049,10 +1313,12 @@ export default function Home() {
             selectedLayerId={selectedLayerId}
             onSelectLayer={setSelectedLayerId}
             onToggleLayerVisibility={handleToggleLayerVisibility}
+            onToggleLayerLock={handleToggleLayerLock}
             onDeleteLayer={handleDeleteLayer}
             onDuplicateLayer={handleDuplicateLayer}
             onRenameLayer={handleRenameLayer}
             onReorderLayers={handleReorderLayers}
+            onBakeTextLayer={handleBakeTextLayer}
             onAddDoubleExposureLayer={handleAddDoubleExposureLayer}
             onUpdateDoubleExposureLayer={handleUpdateDoubleExposureLayer}
             onAddTextLayer={handleAddTextLayer}
@@ -1060,6 +1326,14 @@ export default function Home() {
             exportSettings={exportSettings}
             onChangeExportSettings={setExportSettings}
             onTriggerExport={handleTriggerExport}
+            backgroundEraser={backgroundEraser}
+            onChangeEraserColor={handleChangeEraserColor}
+            onChangeEraserTolerance={handleChangeEraserTolerance}
+            onCommitEraser={handleCommitEraser}
+            onToggleBackgroundRemoval={handleToggleBackgroundRemoval}
+            onResetBackgroundEraser={handleResetBackgroundEraser}
+            isEraserPickerActive={isEraserPickerActive}
+            onToggleEraserPicker={() => setIsEraserPickerActive((prev) => !prev)}
             collapsed={rightPanelCollapsed}
             onToggleCollapsed={() => setRightPanelCollapsed((prev) => !prev)}
             hasImage={hasImage}
@@ -1104,6 +1378,9 @@ export default function Home() {
           onAddSelectivePoint={handleAddSelectivePoint}
           onUpdateSelectivePoint={handleUpdateSelectivePoint}
           onDeleteSelectivePoint={handleDeleteSelectivePoint}
+          onDuplicateSelectivePoint={handleDuplicateSelectivePoint}
+          showSelectiveMarkers={showSelectiveMarkers}
+          onToggleSelectiveMarkers={() => setShowSelectiveMarkers((prev) => !prev)}
           isEyedropperActive={isEyedropperActive}
           onToggleEyedropper={() => setIsEyedropperActive((prev) => !prev)}
           presetLayers={presetLayers}
@@ -1112,6 +1389,7 @@ export default function Home() {
           onTogglePresetLayerVisibility={handleTogglePresetLayerVisibility}
           onDeletePresetLayer={handleDeletePresetLayer}
           onClearPresetLayers={handleClearPresetLayers}
+          onCommitPresets={handleCommitPresets}
           transformState={transform}
           onUpdateTransform={handleUpdateTransform}
           onResetCrop={handleResetCrop}
@@ -1124,10 +1402,12 @@ export default function Home() {
           selectedLayerId={selectedLayerId}
           onSelectLayer={setSelectedLayerId}
           onToggleLayerVisibility={handleToggleLayerVisibility}
+          onToggleLayerLock={handleToggleLayerLock}
           onDeleteLayer={handleDeleteLayer}
           onDuplicateLayer={handleDuplicateLayer}
           onRenameLayer={handleRenameLayer}
           onReorderLayers={handleReorderLayers}
+          onBakeTextLayer={handleBakeTextLayer}
           onAddDoubleExposureLayer={handleAddDoubleExposureLayer}
           onUpdateDoubleExposureLayer={handleUpdateDoubleExposureLayer}
           onAddTextLayer={handleAddTextLayer}
@@ -1135,6 +1415,14 @@ export default function Home() {
           exportSettings={exportSettings}
           onChangeExportSettings={setExportSettings}
           onTriggerExport={handleTriggerExport}
+          backgroundEraser={backgroundEraser}
+          onChangeEraserColor={handleChangeEraserColor}
+          onChangeEraserTolerance={handleChangeEraserTolerance}
+          onCommitEraser={handleCommitEraser}
+          onToggleBackgroundRemoval={handleToggleBackgroundRemoval}
+          onResetBackgroundEraser={handleResetBackgroundEraser}
+          isEraserPickerActive={isEraserPickerActive}
+          onToggleEraserPicker={() => setIsEraserPickerActive((prev) => !prev)}
           hasImage={hasImage}
           isMobileSheet={true}
           onCloseMobileSheet={() => setMobileSheetOpen(false)}
@@ -1145,6 +1433,13 @@ export default function Home() {
       <ShortcutsOverlay
         isOpen={showShortcutsModal}
         onClose={() => setShowShortcutsModal(false)}
+      />
+
+      {/* New Canvas Dialog */}
+      <NewCanvasDialog
+        isOpen={showNewCanvasDialog}
+        onClose={() => setShowNewCanvasDialog(false)}
+        onCreate={handleCreateSolidCanvas}
       />
     </div>
   );

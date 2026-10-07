@@ -25,12 +25,14 @@ interface CenterCanvasProps {
   selectivePoints: SelectivePoint[];
   selectedSelectivePointId: string | null;
   isEyedropperActive?: boolean;
+  isEraserPickerActive?: boolean;
   transformState?: TransformState;
   onSelectLayer: (id: string | null) => void;
   onSelectSelectivePoint: (id: string | null) => void;
   onAddSelectivePointAt: (normX: number, normY: number) => void;
   onUpdateSelectivePoint: (id: string, updates: Partial<SelectivePoint>) => void;
   onSampleWhiteBalance?: (normX: number, normY: number) => void;
+  onSampleEraserColor?: (normX: number, normY: number) => void;
   onUpdateTextPosition: (id: string, x: number, y: number) => void;
   onUpdateTextFontSize: (id: string, fontSize: number) => void;
   onDeleteLayer?: (id: string) => void;
@@ -38,11 +40,70 @@ interface CenterCanvasProps {
   onImageSelect: (file: File) => void;
   onApplyCrop?: (crop: { x: number; y: number; width: number; height: number }) => void;
   renderPipeline: () => void;
+  showSelectiveMarkers?: boolean;
 }
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
+/**
+ * Standard transparency checkerboard, drawn behind the edited canvas so any
+ * pixels keyed out by the Background Eraser read as "transparent" rather than
+ * as black. Uses conic-gradient, which every supported browser renders.
+ */
+const TRANSPARENCY_CHECKER =
+  "conic-gradient(from 90deg at 1px 1px, rgba(255,255,255,0.10) 25%, transparent 0) 0 0/16px 16px";
+
 type CropHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w" | "move";
+
+/**
+ * Helper to build live CSS styling for text overlays
+ */
+function getTextStyle(t: TextOverlay): React.CSSProperties {
+  const style: React.CSSProperties = {
+    position: "absolute",
+    left: `${t.x * 100}%`,
+    top: `${t.y * 100}%`,
+    fontFamily: t.fontFamily || "inherit",
+    fontSize: `${t.fontSize}px`,
+    fontWeight: t.fontWeight || "bold",
+    textAlign: t.textAlign || "left",
+    color: t.color,
+    opacity: (t.opacity !== undefined ? t.opacity : 100) / 100,
+    lineHeight: 1,
+  };
+
+  const transforms: string[] = [];
+  if (t.rotation) transforms.push(`rotate(${t.rotation}deg)`);
+  if (t.skewX || t.skewY) transforms.push(`skew(${t.skewX || 0}deg, ${t.skewY || 0}deg)`);
+  if (transforms.length > 0) {
+    style.transform = transforms.join(" ");
+  }
+
+  if (t.stroke) {
+    (style as any).WebkitTextStroke = `${t.stroke.width}px ${t.stroke.color}`;
+  }
+
+  const shadows: string[] = [];
+  if (t.glow) {
+    const blur = t.glow.blur || 12;
+    shadows.push(`0 0 ${blur}px ${t.glow.color}`, `0 0 ${blur * 1.6}px ${t.glow.color}`);
+  }
+  if (t.shadow) {
+    shadows.push(
+      `${t.shadow.offsetX || 3}px ${t.shadow.offsetY || 3}px ${t.shadow.blur || 6}px ${t.shadow.color}`
+    );
+  }
+  if (t.outline) {
+    const w = t.outline.width || 2;
+    const c = t.outline.color || "#ffffff";
+    shadows.push(`-${w}px -${w}px 0 ${c}, ${w}px -${w}px 0 ${c}, -${w}px ${w}px 0 ${c}, ${w}px ${w}px 0 ${c}`);
+  }
+  if (shadows.length > 0) {
+    style.textShadow = shadows.join(", ");
+  }
+
+  return style;
+}
 
 const CenterCanvas = memo(function CenterCanvas({
   canvasRef,
@@ -57,20 +118,27 @@ const CenterCanvas = memo(function CenterCanvas({
   selectivePoints,
   selectedSelectivePointId,
   isEyedropperActive = false,
+  isEraserPickerActive = false,
   transformState,
   onSelectLayer,
   onSelectSelectivePoint,
   onAddSelectivePointAt,
   onUpdateSelectivePoint,
   onSampleWhiteBalance,
+  onSampleEraserColor,
   onUpdateTextPosition,
   onUpdateTextFontSize,
   onImageSelect,
   onApplyCrop,
   renderPipeline,
+  showSelectiveMarkers = true,
 }: CenterCanvasProps) {
   const textInteractingRef = useRef(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [snapGuides, setSnapGuides] = useState<{ x: number | null; y: number | null }>({
+    x: null,
+    y: null,
+  });
 
   // Pan offset state for moving canvas view
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -235,6 +303,11 @@ const CenterCanvas = memo(function CenterCanvas({
       return;
     }
 
+    if (isEraserPickerActive && onSampleEraserColor) {
+      onSampleEraserColor(normX, normY);
+      return;
+    }
+
     if (activeTool === "selective" && !pointDragRef.current && !pointRadiusRef.current) {
       onAddSelectivePointAt(normX, normY);
       return;
@@ -287,6 +360,11 @@ const CenterCanvas = memo(function CenterCanvas({
     curY: number
   ) => {
     e.stopPropagation();
+    const targetLayer = layers.find((l) => l.id === id);
+    if (targetLayer?.locked) {
+      onSelectLayer(id);
+      return;
+    }
     textInteractingRef.current = true;
     onSelectLayer(id);
 
@@ -312,6 +390,8 @@ const CenterCanvas = memo(function CenterCanvas({
     fontSize: number
   ) => {
     e.stopPropagation();
+    const targetLayer = layers.find((l) => l.id === id);
+    if (targetLayer?.locked) return;
     textInteractingRef.current = true;
 
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
@@ -457,14 +537,28 @@ const CenterCanvas = memo(function CenterCanvas({
           }
         }
 
-        // Text Dragging
+        // Text Dragging with Snap Helpers
         if (textDragRef.current && canvasWrapperRef.current) {
           const rect = canvasWrapperRef.current.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             const deltaX = (clientX - textDragRef.current.startX) / rect.width;
             const deltaY = (clientY - textDragRef.current.startY) / rect.height;
-            const nextX = Math.max(0, Math.min(0.95, textDragRef.current.origX + deltaX));
-            const nextY = Math.max(0, Math.min(0.95, textDragRef.current.origY + deltaY));
+            let nextX = Math.max(0, Math.min(0.95, textDragRef.current.origX + deltaX));
+            let nextY = Math.max(0, Math.min(0.95, textDragRef.current.origY + deltaY));
+
+            // Smart snap to center (0.5) and edges
+            let sx: number | null = null;
+            let sy: number | null = null;
+            if (Math.abs(nextX - 0.5) < 0.02) {
+              nextX = 0.5;
+              sx = 0.5;
+            }
+            if (Math.abs(nextY - 0.5) < 0.02) {
+              nextY = 0.5;
+              sy = 0.5;
+            }
+            setSnapGuides({ x: sx, y: sy });
+
             textDragRef.current.currentX = nextX;
             textDragRef.current.currentY = nextY;
 
@@ -541,6 +635,7 @@ const CenterCanvas = memo(function CenterCanvas({
     const handlePointerUp = () => {
       isDraggingDividerRef.current = false;
       isPanningRef.current = false;
+      setSnapGuides({ x: null, y: null });
 
       // Commit Crop final coordinates
       if (cropDragRef.current) {
@@ -680,6 +775,21 @@ const CenterCanvas = memo(function CenterCanvas({
         </div>
       )}
 
+      {/* Background Eraser colour sampling banner */}
+      {isEraserPickerActive && (
+        <div className="absolute top-4 z-40 px-3.5 py-1.5 bg-[var(--accent)] text-white font-medium text-xs rounded-md shadow-xl flex items-center gap-2 animate-bounce">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
+            />
+          </svg>
+          <span>Click the background to sample its colour</span>
+        </div>
+      )}
+
       {/* Drag upload overlay */}
       {isDraggingUpload && (
         <div className="absolute inset-0 bg-[#3b82f6]/10 border-2 border-dashed border-[#3b82f6] z-50 flex items-center justify-center backdrop-blur-sm pointer-events-none">
@@ -733,16 +843,8 @@ const CenterCanvas = memo(function CenterCanvas({
                 return (
                   <div
                     key={layer.id}
-                    style={{
-                      position: "absolute",
-                      left: `${t.x * 100}%`,
-                      top: `${t.y * 100}%`,
-                      fontFamily: t.fontFamily || "inherit",
-                      fontSize: `${computedPx}px`,
-                      color: t.color,
-                      lineHeight: 1,
-                    }}
-                    className="p-1 font-bold whitespace-nowrap select-none pointer-events-none"
+                    style={getTextStyle(t)}
+                    className="p-1 whitespace-nowrap select-none pointer-events-none"
                   >
                     {t.text}
                   </div>
@@ -779,17 +881,33 @@ const CenterCanvas = memo(function CenterCanvas({
           onClick={handleCanvasContainerClick}
           className={`relative max-w-full max-h-full rounded shadow-2xl border border-[#222227] overflow-hidden ${
             isEyedropperActive ? "cursor-crosshair" : activeTool === "selective" ? "cursor-crosshair" : ""
-          }`}
+          } ${isEraserPickerActive ? "cursor-crosshair" : ""}`}
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
             transformOrigin: "center center",
             aspectRatio: imageAspectRatio,
+            backgroundColor: "#121215",
+            backgroundImage: TRANSPARENCY_CHECKER,
           }}
         >
           <canvas
             ref={canvasRef}
             className="block w-full h-full object-contain pointer-events-none"
           />
+
+          {/* Visual Snap Alignment Guide Lines */}
+          {snapGuides.x !== null && (
+            <div
+              style={{ left: `${snapGuides.x * 100}%` }}
+              className="absolute top-0 bottom-0 w-[1.5px] bg-[#38bdf8] pointer-events-none z-30 shadow-[0_0_6px_#38bdf8]"
+            />
+          )}
+          {snapGuides.y !== null && (
+            <div
+              style={{ top: `${snapGuides.y * 100}%` }}
+              className="absolute left-0 right-0 h-[1.5px] bg-[#38bdf8] pointer-events-none z-30 shadow-[0_0_6px_#38bdf8]"
+            />
+          )}
 
           {/* Interactive Text Layers Overlay */}
           {layers
@@ -805,17 +923,10 @@ const CenterCanvas = memo(function CenterCanvas({
                   key={layer.id}
                   onMouseDown={(e) => handleTextPointerDown(e, layer.id, t.x, t.y)}
                   onTouchStart={(e) => handleTextPointerDown(e, layer.id, t.x, t.y)}
-                  style={{
-                    position: "absolute",
-                    left: `${t.x * 100}%`,
-                    top: `${t.y * 100}%`,
-                    fontFamily: t.fontFamily || "inherit",
-                    fontSize: `${computedPx}px`,
-                    color: t.color,
-                    lineHeight: 1,
-                  }}
+                  style={getTextStyle(t)}
                   className={`
-                    cursor-move select-none p-1 font-bold whitespace-nowrap will-change-transform
+                    select-none p-1 whitespace-nowrap will-change-transform
+                    ${layer.locked ? "cursor-not-allowed" : "cursor-move"}
                     ${
                       isSelected
                         ? "ring-2 ring-[#3b82f6] ring-offset-1 ring-offset-black/50 bg-[#3b82f6]/10 rounded shadow-lg"
@@ -826,7 +937,7 @@ const CenterCanvas = memo(function CenterCanvas({
                   {t.text}
 
                   {/* Corner Resize Handle */}
-                  {isSelected && (
+                  {isSelected && !layer.locked && (
                     <div
                       onMouseDown={(e) => handleResizeHandleDown(e, layer.id, normFraction)}
                       onTouchStart={(e) => handleResizeHandleDown(e, layer.id, normFraction)}
@@ -839,6 +950,7 @@ const CenterCanvas = memo(function CenterCanvas({
 
           {/* Interactive Selective Control Points Overlay */}
           {activeTool === "selective" &&
+            showSelectiveMarkers &&
             selectivePoints.map((pt, idx) => {
               const isSelected = selectedSelectivePointId === pt.id;
 

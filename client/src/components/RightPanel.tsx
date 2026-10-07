@@ -9,6 +9,10 @@ import {
   CurvesData,
   SelectivePoint,
   PresetLayer,
+  BackgroundEraserSettings,
+  TextStroke,
+  TextGlow,
+  TextShadow,
 } from "@/types/editor";
 import { TransformState } from "@/hooks/useCanvas";
 import { CATEGORIZED_FONTS } from "@/utils/fonts";
@@ -18,6 +22,7 @@ import {
   STACKABLE_PRESETS,
   STACKABLE_PRESET_CATEGORIES,
 } from "@/constants/presets";
+import { TEXT_COLOR_SWATCHES } from "@/constants/textColors";
 
 interface RightPanelProps {
   activeTool: ToolType;
@@ -47,10 +52,16 @@ interface RightPanelProps {
   selectedLayerId: string | null;
   onSelectLayer: (id: string | null) => void;
   onToggleLayerVisibility: (id: string) => void;
+  onToggleLayerLock?: (id: string) => void;
   onDeleteLayer: (id: string) => void;
   onDuplicateLayer?: (id: string) => void;
   onRenameLayer?: (id: string, name: string) => void;
   onReorderLayers: (newLayers: LayerItem[]) => void;
+  onCommitPresets?: () => void;
+  onBakeTextLayer?: (id: string) => void;
+  onDuplicateSelectivePoint?: (id: string) => void;
+  showSelectiveMarkers?: boolean;
+  onToggleSelectiveMarkers?: () => void;
   onResetCrop?: () => void;
   onApplyCrop?: () => void;
   onAddDoubleExposureLayer?: (file: File) => void;
@@ -64,15 +75,52 @@ interface RightPanelProps {
     fontSize: number,
     color: string,
     fontFamily: string,
-    category: "standard" | "design" | "artsy" | "display"
+    category: "standard" | "design" | "artsy" | "display",
+    extraStyles?: {
+      fontWeight?: "normal" | "bold" | "bolder";
+      textAlign?: "left" | "center" | "right";
+      rotation?: number;
+      opacity?: number;
+      stroke?: TextStroke;
+      outline?: TextStroke;
+      glow?: TextGlow;
+      shadow?: TextShadow;
+      skewX?: number;
+      skewY?: number;
+      curl?: number;
+    }
   ) => void;
   onUpdateTextLayer?: (
     id: string,
-    updates: Partial<{ text: string; fontSize: number; color: string; fontFamily: string }>
+    updates: Partial<{
+      text: string;
+      fontSize: number;
+      color: string;
+      fontFamily: string;
+      fontWeight?: "normal" | "bold" | "bolder";
+      textAlign?: "left" | "center" | "right";
+      rotation?: number;
+      opacity?: number;
+      stroke?: TextStroke | null;
+      outline?: TextStroke | null;
+      glow?: TextGlow | null;
+      shadow?: TextShadow | null;
+      skewX?: number;
+      skewY?: number;
+      curl?: number;
+    }>
   ) => void;
   exportSettings: ExportSettings;
   onChangeExportSettings: (settings: ExportSettings) => void;
   onTriggerExport: () => void;
+  backgroundEraser: BackgroundEraserSettings;
+  onChangeEraserColor: (color: string) => void;
+  onChangeEraserTolerance: (tolerance: number) => void;
+  onCommitEraser: () => void;
+  onToggleBackgroundRemoval: (enabled: boolean) => void;
+  onResetBackgroundEraser: () => void;
+  isEraserPickerActive: boolean;
+  onToggleEraserPicker: () => void;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   hasImage?: boolean;
@@ -301,6 +349,59 @@ function CompactSlider({
   );
 }
 
+/**
+ * Reusable Color Picker with preset swatches (Popular + Among Us crewmates) and custom color input
+ */
+function ColorSwatchPicker({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+  label?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {label && <div className="text-[11px] text-[var(--text-muted)] font-medium">{label}</div>}
+      <div className="flex items-center gap-2">
+        <label className="relative flex items-center justify-center w-7 h-7 rounded border border-[var(--border)] overflow-hidden cursor-pointer shrink-0 shadow-sm hover:border-[var(--accent)] transition-colors">
+          <input
+            type="color"
+            value={value.startsWith("#") && value.length === 7 ? value : "#ffffff"}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute -inset-2 w-12 h-12 opacity-0 cursor-pointer"
+          />
+          <div className="w-full h-full" style={{ backgroundColor: value }} />
+        </label>
+        <span className="font-mono text-xs text-[var(--text)] uppercase select-all">
+          {value}
+        </span>
+      </div>
+
+      {/* Swatches grid */}
+      <div className="space-y-1 pt-1">
+        <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] font-bold">Presets</div>
+        <div className="flex flex-wrap gap-1">
+          {TEXT_COLOR_SWATCHES.map((swatch) => (
+            <button
+              key={swatch.name + swatch.hex}
+              onClick={() => onChange(swatch.hex)}
+              className={`w-4 h-4 rounded-full border transition-all cursor-pointer ${
+                value.toLowerCase() === swatch.hex.toLowerCase()
+                  ? "ring-2 ring-[var(--accent)] ring-offset-1 ring-offset-[#121316] scale-110 border-white"
+                  : "border-black/40 hover:scale-110 hover:border-white/80"
+              }`}
+              style={{ backgroundColor: swatch.hex }}
+              title={`${swatch.name} (${swatch.hex})`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const RightPanel = memo(function RightPanel({
   activeTool,
   adjustments,
@@ -329,10 +430,16 @@ const RightPanel = memo(function RightPanel({
   selectedLayerId,
   onSelectLayer,
   onToggleLayerVisibility,
+  onToggleLayerLock,
   onDeleteLayer,
   onDuplicateLayer,
   onRenameLayer,
   onReorderLayers,
+  onCommitPresets,
+  onBakeTextLayer,
+  onDuplicateSelectivePoint,
+  showSelectiveMarkers,
+  onToggleSelectiveMarkers,
   onResetCrop,
   onApplyCrop,
   onAddDoubleExposureLayer,
@@ -342,6 +449,14 @@ const RightPanel = memo(function RightPanel({
   exportSettings,
   onChangeExportSettings,
   onTriggerExport,
+  backgroundEraser,
+  onChangeEraserColor,
+  onChangeEraserTolerance,
+  onCommitEraser,
+  onToggleBackgroundRemoval,
+  onResetBackgroundEraser,
+  isEraserPickerActive,
+  onToggleEraserPicker,
   collapsed = false,
   onToggleCollapsed,
   hasImage = false,
@@ -380,6 +495,77 @@ const RightPanel = memo(function RightPanel({
   const [fontSizeInput, setFontSizeInput] = useState(48);
   const [textColorInput, setTextColorInput] = useState("#2f7cf6");
   const [selectedFont, setSelectedFont] = useState(CATEGORIZED_FONTS[0]);
+  // Extended text styling state
+  const [textFontWeight, setTextFontWeight] = useState<"normal" | "bold" | "bolder">("bold");
+  const [textAlign, setTextAlignState] = useState<"left" | "center" | "right">("left");
+  const [textRotation, setTextRotation] = useState(0);
+  const [textOpacity, setTextOpacity] = useState(100);
+  const [textStroke, setTextStroke] = useState<TextStroke | null>(null);
+  const [textOutline, setTextOutline] = useState<TextStroke | null>(null);
+  const [textGlow, setTextGlow] = useState<TextGlow | null>(null);
+  const [textShadow, setTextShadow] = useState<TextShadow | null>(null);
+  const [textSkewX, setTextSkewX] = useState(0);
+  const [textSkewY, setTextSkewY] = useState(0);
+  const [textCurl, setTextCurl] = useState(0);
+  // Track which text effects sub-section is open
+  const [openTextSections, setOpenTextSections] = useState({
+    basic: true,
+    stroke: false,
+    effects: false,
+    transform: false,
+  });
+
+  /** Helper: push text style update to active layer */
+  const pushTextUpdate = (updates: Parameters<NonNullable<typeof onUpdateTextLayer>>[1]) => {
+    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
+      onUpdateTextLayer(selectedLayerId, updates);
+    }
+  };
+
+  /** Collect current state into extraStyles for new layer creation */
+  const collectExtraStyles = () => ({
+    fontWeight: textFontWeight,
+    textAlign,
+    rotation: textRotation,
+    opacity: textOpacity,
+    stroke: textStroke ?? undefined,
+    outline: textOutline ?? undefined,
+    glow: textGlow ?? undefined,
+    shadow: textShadow ?? undefined,
+    skewX: textSkewX,
+    skewY: textSkewY,
+    curl: textCurl,
+  });
+
+  /** Reset all text effects to defaults */
+  const resetTextEffects = () => {
+    setTextFontWeight("bold");
+    setTextAlignState("left");
+    setTextRotation(0);
+    setTextOpacity(100);
+    setTextStroke(null);
+    setTextOutline(null);
+    setTextGlow(null);
+    setTextShadow(null);
+    setTextSkewX(0);
+    setTextSkewY(0);
+    setTextCurl(0);
+    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
+      onUpdateTextLayer(selectedLayerId, {
+        fontWeight: "bold",
+        textAlign: "left",
+        rotation: 0,
+        opacity: 100,
+        stroke: null,
+        outline: null,
+        glow: null,
+        shadow: null,
+        skewX: 0,
+        skewY: 0,
+        curl: 0,
+      });
+    }
+  };
 
   // Selected layer helpers
   const selectedLayer = layers.find((l) => l.id === selectedLayerId);
@@ -394,12 +580,24 @@ const RightPanel = memo(function RightPanel({
       setTextInput(t.text);
       setFontSizeInput(t.fontSize);
       setTextColorInput(t.color);
+      setTextFontWeight(t.fontWeight || "bold");
+      setTextAlignState(t.textAlign || "left");
+      setTextRotation(t.rotation ?? 0);
+      setTextOpacity(t.opacity ?? 100);
+      setTextStroke(t.stroke || null);
+      setTextOutline(t.outline || null);
+      setTextGlow(t.glow || null);
+      setTextShadow(t.shadow || null);
+      setTextSkewX(t.skewX ?? 0);
+      setTextSkewY(t.skewY ?? 0);
+      setTextCurl(t.curl ?? 0);
       const font = CATEGORIZED_FONTS.find(
         (f) => f.family === t.fontFamily || f.name === t.fontFamily
       );
       if (font) setSelectedFont(font);
     }
   }, [selectedLayerId, selectedLayer]);
+
 
   const handleRotateCW = () => {
     onUpdateTransform({ rotation: (transformState.rotation + 90) % 360 });
@@ -421,12 +619,14 @@ const RightPanel = memo(function RightPanel({
     onUpdateTransform({ straighten: val });
   };
 
+  // Determine if specific tools (Curves, Selective, Crop, Text, Layers, Eraser, Export) take over panel view
   const isSpecialTool =
     activeTool === "curves" ||
     activeTool === "selective" ||
     activeTool === "crop" ||
     activeTool === "text" ||
     activeTool === "layers" ||
+    activeTool === "eraser" ||
     activeTool === "export";
 
   return (
@@ -938,6 +1138,26 @@ const RightPanel = memo(function RightPanel({
                     );
                   })}
                 </div>
+
+                {/* Commit Preset / Cancel Preset Action Buttons */}
+                {onCommitPresets && (
+                  <div className="pt-2 flex items-center gap-2">
+                    <button
+                      onClick={onCommitPresets}
+                      className="flex-1 py-2 bg-[var(--accent)] hover:bg-[#256ee0] text-white font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                      title="Flatten active presets into base image and reset sliders"
+                    >
+                      <span>✓</span> Done (Flatten Preset)
+                    </button>
+                    <button
+                      onClick={onClearPresetLayers}
+                      className="px-3 py-2 bg-[var(--bg-elevated)] hover:bg-[var(--bg-app)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] text-xs rounded transition-colors cursor-pointer"
+                      title="Revert and cancel preset"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1009,6 +1229,9 @@ const RightPanel = memo(function RightPanel({
             onAddPoint={onAddSelectivePoint}
             onUpdatePoint={onUpdateSelectivePoint}
             onDeletePoint={onDeleteSelectivePoint}
+            onDuplicatePoint={onDuplicateSelectivePoint}
+            showMarkers={showSelectiveMarkers}
+            onToggleShowMarkers={onToggleSelectiveMarkers}
           />
         )}
 
@@ -1166,100 +1389,625 @@ const RightPanel = memo(function RightPanel({
         {/* 6. TEXT OVERLAY TOOL */}
         {/* ======================================================== */}
         {activeTool === "text" && (
-          <div className="space-y-3.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
-              {isTextLayerSelected ? "Edit Text Layer" : "Add Text Layer"}
-            </span>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                {isTextLayerSelected ? "Edit Text Layer" : "Add Text Layer"}
+              </span>
+              <button
+                onClick={resetTextEffects}
+                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"
+                title="Reset all effects and transforms"
+              >
+                Reset Effects
+              </button>
+            </div>
 
+            {/* Text Input Content */}
             <div className="space-y-1">
-              <span className="text-xs text-[var(--text-muted)]">Text Content</span>
+              <span className="text-xs text-[var(--text-muted)] font-medium">Text Content</span>
               <input
                 type="text"
                 value={textInput}
                 onChange={(e) => {
                   setTextInput(e.target.value);
-                  if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-                    onUpdateTextLayer(selectedLayerId, { text: e.target.value });
-                  }
+                  pushTextUpdate({ text: e.target.value });
                 }}
-                className="w-full px-2.5 py-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-[16px] sm:text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)] min-h-[40px]"
+                className="w-full px-2.5 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)] font-medium"
+                placeholder="Enter text..."
               />
             </div>
 
-            <div className="space-y-1">
-              <span className="text-xs text-[var(--text-muted)]">Font Family</span>
-              <select
-                value={selectedFont.name}
-                onChange={(e) => {
-                  const font = CATEGORIZED_FONTS.find((f) => f.name === e.target.value);
-                  if (font) {
-                    setSelectedFont(font);
-                    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-                      onUpdateTextLayer(selectedLayerId, { fontFamily: font.family });
-                    }
-                  }
-                }}
-                className="w-full px-2.5 py-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-[16px] sm:text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)] min-h-[40px]"
-              >
-                {CATEGORIZED_FONTS.map((font) => (
-                  <option key={font.name} value={font.name}>
-                    {font.name} ({font.category})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
+            {/* Font Family & Size */}
+            <div className="space-y-2">
               <div className="space-y-1">
-                <span className="text-xs text-[var(--text-muted)]">Font Size (px)</span>
-                <input
-                  type="number"
-                  min="12"
-                  max="240"
-                  value={fontSizeInput}
+                <span className="text-xs text-[var(--text-muted)] font-medium">Font Family</span>
+                <select
+                  value={selectedFont.name}
                   onChange={(e) => {
-                    const size = Number(e.target.value);
-                    setFontSizeInput(size);
-                    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-                      onUpdateTextLayer(selectedLayerId, { fontSize: size });
+                    const font = CATEGORIZED_FONTS.find((f) => f.name === e.target.value);
+                    if (font) {
+                      setSelectedFont(font);
+                      pushTextUpdate({ fontFamily: font.family });
                     }
                   }}
-                  className="w-full px-2.5 py-2 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-[16px] sm:text-xs text-[var(--text)] min-h-[40px]"
-                />
+                  className="w-full px-2.5 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded text-xs text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                >
+                  {CATEGORIZED_FONTS.map((font) => (
+                    <option key={font.name} value={font.name}>
+                      {font.name} ({font.category})
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-xs text-[var(--text-muted)]">Color</span>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--text-muted)]">Size</span>
+                    <span className="font-mono text-xs text-[var(--text)]">{fontSizeInput}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="12"
+                    max="180"
+                    value={fontSizeInput}
+                    onChange={(e) => {
+                      const sz = Number(e.target.value);
+                      setFontSizeInput(sz);
+                      pushTextUpdate({ fontSize: sz });
+                    }}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--text-muted)]">Opacity</span>
+                    <span className="font-mono text-xs text-[var(--text)]">{textOpacity}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={textOpacity}
+                    onChange={(e) => {
+                      const op = Number(e.target.value);
+                      setTextOpacity(op);
+                      pushTextUpdate({ opacity: op });
+                    }}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              {/* Weight & Alignment */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-[var(--text-muted)]">Weight</span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(["normal", "bold", "bolder"] as const).map((w) => (
+                      <button
+                        key={w}
+                        onClick={() => {
+                          setTextFontWeight(w);
+                          pushTextUpdate({ fontWeight: w });
+                        }}
+                        className={`py-1 text-[10px] rounded border capitalize cursor-pointer transition-colors ${
+                          textFontWeight === w
+                            ? "bg-[var(--accent)] text-white font-bold border-[var(--accent)]"
+                            : "bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {w === "bolder" ? "Black" : w}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-[var(--text-muted)]">Align</span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(["left", "center", "right"] as const).map((al) => (
+                      <button
+                        key={al}
+                        onClick={() => {
+                          setTextAlignState(al);
+                          pushTextUpdate({ textAlign: al });
+                        }}
+                        className={`py-1 text-[10px] rounded border capitalize cursor-pointer transition-colors ${
+                          textAlign === al
+                            ? "bg-[var(--accent)] text-white font-bold border-[var(--accent)]"
+                            : "bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {al === "left" ? "⇤" : al === "center" ? "≡" : "⇥"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Rotation */}
+              <div className="space-y-1 pt-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[var(--text-muted)]">Rotation</span>
+                  <span className="font-mono text-xs text-[var(--text)]">{textRotation}°</span>
+                </div>
                 <input
-                  type="color"
-                  value={textColorInput}
+                  type="range"
+                  min="0"
+                  max="360"
+                  value={textRotation}
                   onChange={(e) => {
-                    setTextColorInput(e.target.value);
-                    if (isTextLayerSelected && selectedLayerId && onUpdateTextLayer) {
-                      onUpdateTextLayer(selectedLayerId, { color: e.target.value });
-                    }
+                    const rot = Number(e.target.value);
+                    setTextRotation(rot);
+                    pushTextUpdate({ rotation: rot });
                   }}
-                  className="w-full h-10 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded cursor-pointer"
+                  className="w-full"
                 />
               </div>
             </div>
 
-            {!isTextLayerSelected && (
-              <button
-                onClick={() => {
-                  onAddTextLayer(
-                    textInput,
-                    fontSizeInput,
-                    textColorInput,
-                    selectedFont.family,
-                    selectedFont.category as any
-                  );
+            {/* Text Fill Color */}
+            <div className="p-3 bg-[var(--bg-elevated)] border border-[var(--border)] rounded">
+              <ColorSwatchPicker
+                label="Fill Color"
+                value={textColorInput}
+                onChange={(hex) => {
+                  setTextColorInput(hex);
+                  pushTextUpdate({ color: hex });
                 }}
-                className="w-full py-2.5 bg-[var(--accent)] text-white font-semibold rounded text-xs hover:bg-[#256ee0] transition-colors cursor-pointer min-h-[44px]"
+              />
+            </div>
+
+            {/* STROKE & OUTLINE SUBSECTION */}
+            <div className="rounded border border-[var(--border)] overflow-hidden bg-[var(--bg-panel)]">
+              <div
+                onClick={() => setOpenTextSections((p) => ({ ...p, stroke: !p.stroke }))}
+                className="flex items-center justify-between px-3 py-2 bg-[var(--bg-elevated)] cursor-pointer hover:bg-[var(--bg-app)] transition-colors"
               >
-                + Add Text to Canvas
-              </button>
-            )}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {openTextSections.stroke ? "▼" : "▶"}
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                    Stroke & Outline
+                  </span>
+                </div>
+                {(textStroke || textOutline) && (
+                  <span className="text-[10px] text-[var(--accent)] font-medium">Active</span>
+                )}
+              </div>
+
+              {openTextSections.stroke && (
+                <div className="p-3 space-y-4 bg-[var(--bg-panel)]">
+                  {/* Text Stroke / Border */}
+                  <div className="space-y-2">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-xs font-semibold text-[var(--text)]">Border / Stroke</span>
+                      <input
+                        type="checkbox"
+                        checked={!!textStroke}
+                        onChange={(e) => {
+                          const val = e.target.checked ? { color: "#000000", width: 2 } : null;
+                          setTextStroke(val);
+                          pushTextUpdate({ stroke: val });
+                        }}
+                        className="w-4 h-4 accent-[var(--accent)] cursor-pointer"
+                      />
+                    </label>
+
+                    {textStroke && (
+                      <div className="space-y-2.5 pl-2 border-l-2 border-[var(--accent)]/40">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-[var(--text-muted)]">Width</span>
+                            <span className="font-mono text-xs text-[var(--text)]">{textStroke.width}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="20"
+                            value={textStroke.width}
+                            onChange={(e) => {
+                              const next = { ...textStroke, width: Number(e.target.value) };
+                              setTextStroke(next);
+                              pushTextUpdate({ stroke: next });
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                        <ColorSwatchPicker
+                          label="Stroke Color"
+                          value={textStroke.color}
+                          onChange={(hex) => {
+                            const next = { ...textStroke, color: hex };
+                            setTextStroke(next);
+                            pushTextUpdate({ stroke: next });
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Text Outline */}
+                  <div className="space-y-2 pt-2 border-t border-[var(--border)]">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-xs font-semibold text-[var(--text)]">Outer Outline</span>
+                      <input
+                        type="checkbox"
+                        checked={!!textOutline}
+                        onChange={(e) => {
+                          const val = e.target.checked ? { color: "#ffffff", width: 4 } : null;
+                          setTextOutline(val);
+                          pushTextUpdate({ outline: val });
+                        }}
+                        className="w-4 h-4 accent-[var(--accent)] cursor-pointer"
+                      />
+                    </label>
+
+                    {textOutline && (
+                      <div className="space-y-2.5 pl-2 border-l-2 border-[var(--accent)]/40">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-[var(--text-muted)]">Outline Width</span>
+                            <span className="font-mono text-xs text-[var(--text)]">{textOutline.width}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="24"
+                            value={textOutline.width}
+                            onChange={(e) => {
+                              const next = { ...textOutline, width: Number(e.target.value) };
+                              setTextOutline(next);
+                              pushTextUpdate({ outline: next });
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                        <ColorSwatchPicker
+                          label="Outline Color"
+                          value={textOutline.color}
+                          onChange={(hex) => {
+                            const next = { ...textOutline, color: hex };
+                            setTextOutline(next);
+                            pushTextUpdate({ outline: next });
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* GLOW & SHADOW SUBSECTION */}
+            <div className="rounded border border-[var(--border)] overflow-hidden bg-[var(--bg-panel)]">
+              <div
+                onClick={() => setOpenTextSections((p) => ({ ...p, effects: !p.effects }))}
+                className="flex items-center justify-between px-3 py-2 bg-[var(--bg-elevated)] cursor-pointer hover:bg-[var(--bg-app)] transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {openTextSections.effects ? "▼" : "▶"}
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                    Glow & Shadow
+                  </span>
+                </div>
+                {(textGlow || textShadow) && (
+                  <span className="text-[10px] text-[var(--accent)] font-medium">Active</span>
+                )}
+              </div>
+
+              {openTextSections.effects && (
+                <div className="p-3 space-y-4 bg-[var(--bg-panel)]">
+                  {/* Text Glow */}
+                  <div className="space-y-2">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-xs font-semibold text-[var(--text)]">Neon Glow</span>
+                      <input
+                        type="checkbox"
+                        checked={!!textGlow}
+                        onChange={(e) => {
+                          const val = e.target.checked ? { color: "#38bdf8", blur: 12, intensity: 80 } : null;
+                          setTextGlow(val);
+                          pushTextUpdate({ glow: val });
+                        }}
+                        className="w-4 h-4 accent-[var(--accent)] cursor-pointer"
+                      />
+                    </label>
+
+                    {textGlow && (
+                      <div className="space-y-2.5 pl-2 border-l-2 border-[var(--accent)]/40">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-[var(--text-muted)]">Blur</span>
+                              <span className="font-mono text-xs text-[var(--text)]">{textGlow.blur}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="2"
+                              max="40"
+                              value={textGlow.blur}
+                              onChange={(e) => {
+                                const next = { ...textGlow, blur: Number(e.target.value) };
+                                setTextGlow(next);
+                                pushTextUpdate({ glow: next });
+                              }}
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-[var(--text-muted)]">Intensity</span>
+                              <span className="font-mono text-xs text-[var(--text)]">{textGlow.intensity}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="10"
+                              max="100"
+                              value={textGlow.intensity}
+                              onChange={(e) => {
+                                const next = { ...textGlow, intensity: Number(e.target.value) };
+                                setTextGlow(next);
+                                pushTextUpdate({ glow: next });
+                              }}
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+                        <ColorSwatchPicker
+                          label="Glow Color"
+                          value={textGlow.color}
+                          onChange={(hex) => {
+                            const next = { ...textGlow, color: hex };
+                            setTextGlow(next);
+                            pushTextUpdate({ glow: next });
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Drop Shadow */}
+                  <div className="space-y-2 pt-2 border-t border-[var(--border)]">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-xs font-semibold text-[var(--text)]">Drop Shadow</span>
+                      <input
+                        type="checkbox"
+                        checked={!!textShadow}
+                        onChange={(e) => {
+                          const val = e.target.checked
+                            ? { color: "#000000", offsetX: 4, offsetY: 4, blur: 8, opacity: 75 }
+                            : null;
+                          setTextShadow(val);
+                          pushTextUpdate({ shadow: val });
+                        }}
+                        className="w-4 h-4 accent-[var(--accent)] cursor-pointer"
+                      />
+                    </label>
+
+                    {textShadow && (
+                      <div className="space-y-2.5 pl-2 border-l-2 border-[var(--accent)]/40">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-[var(--text-muted)]">Offset X</span>
+                              <span className="font-mono text-xs text-[var(--text)]">{textShadow.offsetX}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-30"
+                              max="30"
+                              value={textShadow.offsetX}
+                              onChange={(e) => {
+                                const next = { ...textShadow, offsetX: Number(e.target.value) };
+                                setTextShadow(next);
+                                pushTextUpdate({ shadow: next });
+                              }}
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-[var(--text-muted)]">Offset Y</span>
+                              <span className="font-mono text-xs text-[var(--text)]">{textShadow.offsetY}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-30"
+                              max="30"
+                              value={textShadow.offsetY}
+                              onChange={(e) => {
+                                const next = { ...textShadow, offsetY: Number(e.target.value) };
+                                setTextShadow(next);
+                                pushTextUpdate({ shadow: next });
+                              }}
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-[var(--text-muted)]">Blur</span>
+                              <span className="font-mono text-xs text-[var(--text)]">{textShadow.blur}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="40"
+                              value={textShadow.blur}
+                              onChange={(e) => {
+                                const next = { ...textShadow, blur: Number(e.target.value) };
+                                setTextShadow(next);
+                                pushTextUpdate({ shadow: next });
+                              }}
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-[var(--text-muted)]">Shadow Opacity</span>
+                              <span className="font-mono text-xs text-[var(--text)]">{textShadow.opacity}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="10"
+                              max="100"
+                              value={textShadow.opacity}
+                              onChange={(e) => {
+                                const next = { ...textShadow, opacity: Number(e.target.value) };
+                                setTextShadow(next);
+                                pushTextUpdate({ shadow: next });
+                              }}
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+
+                        <ColorSwatchPicker
+                          label="Shadow Color"
+                          value={textShadow.color}
+                          onChange={(hex) => {
+                            const next = { ...textShadow, color: hex };
+                            setTextShadow(next);
+                            pushTextUpdate({ shadow: next });
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* TRANSFORM & WARP SUBSECTION */}
+            <div className="rounded border border-[var(--border)] overflow-hidden bg-[var(--bg-panel)]">
+              <div
+                onClick={() => setOpenTextSections((p) => ({ ...p, transform: !p.transform }))}
+                className="flex items-center justify-between px-3 py-2 bg-[var(--bg-elevated)] cursor-pointer hover:bg-[var(--bg-app)] transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {openTextSections.transform ? "▼" : "▶"}
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                    Skew & Arc Warp
+                  </span>
+                </div>
+                {(textSkewX !== 0 || textSkewY !== 0 || textCurl !== 0) && (
+                  <span className="text-[10px] text-[var(--accent)] font-medium">Active</span>
+                )}
+              </div>
+
+              {openTextSections.transform && (
+                <div className="p-3 space-y-3 bg-[var(--bg-panel)]">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[var(--text-muted)]">Skew X</span>
+                      <span className="font-mono text-xs text-[var(--text)]">{textSkewX}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-45"
+                      max="45"
+                      value={textSkewX}
+                      onChange={(e) => {
+                        const sk = Number(e.target.value);
+                        setTextSkewX(sk);
+                        pushTextUpdate({ skewX: sk });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[var(--text-muted)]">Skew Y</span>
+                      <span className="font-mono text-xs text-[var(--text)]">{textSkewY}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-45"
+                      max="45"
+                      value={textSkewY}
+                      onChange={(e) => {
+                        const sk = Number(e.target.value);
+                        setTextSkewY(sk);
+                        pushTextUpdate({ skewY: sk });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[var(--text-muted)]">Arc Bend / Curve</span>
+                      <span className="font-mono text-xs text-[var(--text)]">{textCurl}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-100"
+                      max="100"
+                      value={textCurl}
+                      onChange={(e) => {
+                        const crl = Number(e.target.value);
+                        setTextCurl(crl);
+                        pushTextUpdate({ curl: crl });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Actions: Add Text / Bake Text / Delete Text */}
+            <div className="pt-2 space-y-2">
+              {!isTextLayerSelected ? (
+                <button
+                  onClick={() => {
+                    onAddTextLayer(
+                      textInput,
+                      fontSizeInput,
+                      textColorInput,
+                      selectedFont.family,
+                      selectedFont.category as any,
+                      collectExtraStyles()
+                    );
+                  }}
+                  className="w-full py-2.5 bg-[var(--accent)] text-white font-bold rounded text-xs hover:bg-[#256ee0] transition-colors cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <span>+</span> Add Text to Canvas
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  {onBakeTextLayer && selectedLayerId && (
+                    <button
+                      onClick={() => onBakeTextLayer(selectedLayerId)}
+                      className="w-full py-2.5 bg-[#10b981] hover:bg-[#059669] text-white font-bold rounded text-xs transition-colors cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                      title="Flatten this text layer directly into the base image pixels (presets and tuning will affect it)"
+                    >
+                      <span>✓</span> Bake into Base Image
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (selectedLayerId) onDeleteLayer(selectedLayerId);
+                    }}
+                    className="w-full py-1.5 bg-red-500/15 border border-red-500/40 text-red-400 hover:bg-red-500/25 rounded text-xs transition-colors cursor-pointer"
+                  >
+                    Delete Text Layer
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1270,7 +2018,7 @@ const RightPanel = memo(function RightPanel({
           <div className="space-y-3.5">
             <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
-                Layers
+                Layers ({layers.length})
               </span>
               <button
                 onClick={() => doubleExposureFileInputRef.current?.click()}
@@ -1324,8 +2072,8 @@ const RightPanel = memo(function RightPanel({
               </div>
             )}
 
-            {/* Layer items list */}
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {/* Layer items list with Repositioning and Locking */}
+            <div className="space-y-1.5 max-h-72 overflow-y-auto pr-0.5">
               {layers.map((layer, idx) => {
                 const isSelected = layer.id === selectedLayerId;
                 return (
@@ -1336,20 +2084,74 @@ const RightPanel = memo(function RightPanel({
                       flex items-center justify-between p-2.5 rounded border text-xs cursor-pointer transition-all min-h-[44px]
                       ${
                         isSelected
-                          ? "bg-[var(--accent-soft)] border-[var(--accent)]/50 text-[var(--text)]"
-                          : "bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                          ? "bg-[var(--accent-soft)] border-[var(--accent)]/50 text-[var(--text)] shadow-sm"
+                          : "bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-subtle)]"
                       }
                     `}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <span className="text-[10px] text-[var(--text-muted)] font-mono">#{layers.length - idx}</span>
-                      <span className="font-medium truncate">{layer.name}</span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--bg-panel)] text-[var(--text-muted)] uppercase border border-[var(--border)]">
+                      {/* Reorder Up/Down buttons */}
+                      <div className="flex flex-col gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          disabled={idx === 0}
+                          onClick={() => {
+                            if (idx > 0) {
+                              const next = [...layers];
+                              const temp = next[idx - 1];
+                              next[idx - 1] = next[idx];
+                              next[idx] = temp;
+                              onReorderLayers(next);
+                            }
+                          }}
+                          className="w-4 h-3 flex items-center justify-center text-[9px] bg-[var(--bg-panel)] hover:bg-[var(--accent)] hover:text-white rounded-xs disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                          title="Bring Forward"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          disabled={idx === layers.length - 1}
+                          onClick={() => {
+                            if (idx < layers.length - 1) {
+                              const next = [...layers];
+                              const temp = next[idx + 1];
+                              next[idx + 1] = next[idx];
+                              next[idx] = temp;
+                              onReorderLayers(next);
+                            }
+                          }}
+                          className="w-4 h-3 flex items-center justify-center text-[9px] bg-[var(--bg-panel)] hover:bg-[var(--accent)] hover:text-white rounded-xs disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                          title="Send Backward"
+                        >
+                          ▼
+                        </button>
+                      </div>
+
+                      <span className="font-medium truncate max-w-[110px]">{layer.name}</span>
+                      <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--bg-panel)] text-[var(--text-muted)] uppercase border border-[var(--border)] shrink-0">
                         {layer.type}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Lock Toggle */}
+                      {onToggleLayerLock && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleLayerLock(layer.id);
+                          }}
+                          className={`p-1 rounded cursor-pointer transition-colors ${
+                            layer.locked
+                              ? "text-amber-400 bg-amber-400/10"
+                              : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                          }`}
+                          title={layer.locked ? "Unlock layer" : "Lock layer position"}
+                        >
+                          {layer.locked ? "🔒" : "🔓"}
+                        </button>
+                      )}
+
+                      {/* Visibility Toggle */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1360,6 +2162,24 @@ const RightPanel = memo(function RightPanel({
                       >
                         {layer.visible ? "👁" : "🚫"}
                       </button>
+
+                      {/* Duplicate Layer */}
+                      {onDuplicateLayer && layer.type !== "image" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDuplicateLayer(layer.id);
+                          }}
+                          className="text-[var(--text-muted)] hover:text-white p-1 cursor-pointer transition-colors"
+                          title="Duplicate layer"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </button>
+                      )}
+
+                      {/* Delete Layer */}
                       {layer.type !== "image" && (
                         <button
                           onClick={(e) => {
@@ -1377,11 +2197,138 @@ const RightPanel = memo(function RightPanel({
                 );
               })}
             </div>
+
+            {/* Selected Text Layer Bake Shortcut */}
+            {selectedLayer && selectedLayer.type === "text" && onBakeTextLayer && (
+              <button
+                onClick={() => onBakeTextLayer(selectedLayer.id)}
+                className="w-full py-2 bg-[#10b981] hover:bg-[#059669] text-white font-bold rounded text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                title="Bake this text directly into base image"
+              >
+                <span>✓</span> Bake Selected Text into Image
+              </button>
+            )}
           </div>
         )}
 
         {/* ======================================================== */}
-        {/* 8. EXPORT PANEL */}
+        {/* 8. BACKGROUND ERASER */}
+        {/* ======================================================== */}
+        {activeTool === "eraser" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                Background Eraser
+              </span>
+              <button
+                onClick={onResetBackgroundEraser}
+                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+
+            <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Picks out a flat, uniform background by colour. Pixels close to the
+              key colour become transparent; everything else keeps its original
+              colours.
+            </p>
+
+            {/* Background Key Colour */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-muted)]">
+                Background Colour
+              </span>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={backgroundEraser.color}
+                  onChange={(e) => onChangeEraserColor(e.target.value)}
+                  className="w-10 h-8 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded cursor-pointer shrink-0"
+                  title="Pick the background colour"
+                />
+                <div className="flex-1 h-8 px-2.5 flex items-center bg-[var(--bg-elevated)] border border-[var(--border)] rounded font-mono text-xs text-[var(--text)] uppercase select-text min-w-0">
+                  <span className="truncate">{backgroundEraser.color}</span>
+                </div>
+                <button
+                  onClick={onToggleEraserPicker}
+                  className={`
+                    h-8 px-2.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-all cursor-pointer shrink-0
+                    ${
+                      isEraserPickerActive
+                        ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                        : "bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text)]"
+                    }
+                  `}
+                  title="Click the photo to sample a background colour"
+                >
+                  {isEraserPickerActive ? "Pick…" : "Sample"}
+                </button>
+              </div>
+
+              {isEraserPickerActive && (
+                <p className="text-[10px] text-[var(--accent)]">
+                  Click the photo to sample its colour.
+                </p>
+              )}
+            </div>
+
+            {/* Tolerance */}
+            <div className="space-y-1.5 pt-1">
+              <CompactSlider
+                label="Tolerance"
+                value={backgroundEraser.tolerance}
+                min={0}
+                max={100}
+                specialTrack="unipolar"
+                onChange={onChangeEraserTolerance}
+                onCommit={onCommitEraser}
+                formatDisplay={(v) => `${v}%`}
+              />
+              <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+                <span>Exact match</span>
+                <span>Wide range</span>
+              </div>
+              <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
+                Raise the tolerance if the background has noise, a gradient or
+                JPEG compression artefacts. Lower it if the subject is being
+                removed by mistake.
+              </p>
+            </div>
+
+            {/* Apply / Revert */}
+            <button
+              onClick={() => onToggleBackgroundRemoval(!backgroundEraser.enabled)}
+              disabled={!hasImage}
+              className={`
+                w-full py-2.5 rounded text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-sm
+                ${
+                  !hasImage
+                    ? "bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed"
+                    : backgroundEraser.enabled
+                    ? "bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
+                    : "bg-[var(--accent)] hover:bg-[#256ee0] text-white"
+                }
+              `}
+            >
+              <span>{backgroundEraser.enabled ? "↺" : "✂"}</span>
+              {backgroundEraser.enabled ? "Restore Background" : "Remove Background"}
+            </button>
+
+            {backgroundEraser.enabled && (
+              <div className="flex items-start gap-2 px-2.5 py-2 rounded bg-[var(--accent-soft)] border border-[var(--accent)]/30 text-[11px] text-[var(--accent)]">
+                <span className="leading-snug">
+                  Background removed. Transparency is only kept when you export
+                  as PNG.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* 9. EXPORT PANEL */}
         {/* ======================================================== */}
         {activeTool === "export" && (
           <div className="space-y-4">
@@ -1390,6 +2337,16 @@ const RightPanel = memo(function RightPanel({
                 Export Image
               </span>
             </div>
+
+            {backgroundEraser.enabled && exportSettings.format !== "image/png" && (
+              <div className="flex items-start gap-2 px-2.5 py-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-400">
+                <span className="leading-snug">
+                  Transparency is not supported by{" "}
+                  {exportSettings.format.split("/")[1].toUpperCase()}. Switch to
+                  PNG to keep the removed background transparent.
+                </span>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <span className="text-xs text-[var(--text-muted)]">File Format</span>

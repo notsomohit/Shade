@@ -4,16 +4,42 @@ import { useRef, useCallback, useEffect } from "react";
 import {
   Adjustments,
   LayerItem,
+  TextOverlay,
   GridMode,
   FilterSettings,
   CurvesData,
   SelectivePoint,
+  BackgroundEraserSettings,
 } from "@/types/editor";
 import { DEFAULT_CURVES } from "@/components/CurvesTool";
 import { DEFAULT_ADJUSTMENTS } from "@/constants/presets";
-import { processPixelData } from "@/workers/imageProcessor.worker";
+import {
+  processPixelData,
+  BackgroundEraserParams,
+} from "@/workers/imageProcessor.worker";
 
 export { DEFAULT_ADJUSTMENTS };
+
+/**
+ * Convert a #rrggbb (or #rgb) string into the 0-255 components used by the
+ * chroma key stage in the image processor.
+ */
+export function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  let clean = hex.trim().replace(/^#/, "");
+  if (clean.length === 3) {
+    clean = clean[0] + clean[0] + clean[1] + clean[1] + clean[2] + clean[2];
+  }
+  const int = parseInt(clean, 16);
+  if (!Number.isFinite(int) || clean.length !== 6) {
+    return { r: 255, g: 255, b: 255 };
+  }
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+}
+
+function toEraserParams(settings: BackgroundEraserSettings): BackgroundEraserParams {
+  const { r, g, b } = hexToRgb(settings.color);
+  return { enabled: settings.enabled, r, g, b, tolerance: settings.tolerance };
+}
 
 export interface TransformState {
   rotation: number; // 0, 90, 180, 270
@@ -56,6 +82,11 @@ export function useCanvas() {
 
   const gridModeRef = useRef<GridMode>("none");
   const layersRef = useRef<LayerItem[]>([]);
+  const backgroundEraserRef = useRef<BackgroundEraserSettings>({
+    enabled: false,
+    color: "#ffffff",
+    tolerance: 30,
+  });
   const rafIdRef = useRef<number | null>(null);
 
   // Cache loaded double exposure images
@@ -114,6 +145,7 @@ export function useCanvas() {
     const curves = curvesRef.current;
     const selectivePoints = selectivePointsRef.current;
     const gridMode = gridModeRef.current;
+    const backgroundEraser = backgroundEraserRef.current;
 
     const naturalW = src instanceof HTMLImageElement ? src.naturalWidth : src.width;
     const naturalH = src instanceof HTMLImageElement ? src.naturalHeight : src.height;
@@ -215,7 +247,11 @@ export function useCanvas() {
           (curves.blue && curves.blue.length > 2) ||
           (curves.rgb && (curves.rgb[0].y !== 0 || curves.rgb[1]?.y !== 255))));
 
-    if (hasAnyAdjustments) {
+    // The chroma key writes the alpha channel, so the pixel pass must run even
+    // when every other adjustment sits at its neutral value.
+    const hasEraserActive = backgroundEraser.enabled;
+
+    if (hasAnyAdjustments || hasEraserActive) {
       const imageData = adjCtx.getImageData(0, 0, cropW, cropH);
       processPixelData(
         imageData.data,
@@ -224,7 +260,8 @@ export function useCanvas() {
         adj,
         filter,
         selectivePoints,
-        curves
+        curves,
+        toEraserParams(backgroundEraser)
       );
       adjCtx.putImageData(imageData, 0, 0);
     }
@@ -371,6 +408,11 @@ export function useCanvas() {
             name: "Original",
             intensity: 100,
           };
+          backgroundEraserRef.current = {
+            enabled: false,
+            color: "#ffffff",
+            tolerance: 30,
+          };
           renderPipeline();
           resolve(img);
         };
@@ -381,6 +423,52 @@ export function useCanvas() {
         };
 
         img.src = url;
+      });
+    },
+    [renderPipeline]
+  );
+
+  /**
+   * Create a solid colour canvas as the editing source.
+   * Returns the HTMLImageElement representing the flat-colour background.
+   */
+  const loadSolidCanvas = useCallback(
+    (color: string, width: number, height: number): Promise<HTMLImageElement> => {
+      return new Promise<HTMLImageElement>((resolve, reject) => {
+        try {
+          const offscreen = document.createElement("canvas");
+          offscreen.width = width;
+          offscreen.height = height;
+          const ctx = offscreen.getContext("2d");
+          if (!ctx) throw new Error("Cannot get 2D context");
+          ctx.fillStyle = color;
+          ctx.fillRect(0, 0, width, height);
+
+          const dataUrl = offscreen.toDataURL("image/png");
+          const img = new Image();
+          img.onload = () => {
+            originalImageRef.current = img;
+            previewCanvasRef.current = null;
+            transformRef.current = {
+              rotation: 0,
+              straighten: 0,
+              flipH: false,
+              flipV: false,
+              crop: null,
+            };
+            adjustmentsRef.current = { ...DEFAULT_ADJUSTMENTS };
+            curvesRef.current = { ...DEFAULT_CURVES };
+            selectivePointsRef.current = [];
+            filterRef.current = { id: "original", name: "Original", intensity: 100 };
+            backgroundEraserRef.current = { enabled: false, color: "#ffffff", tolerance: 30 };
+            renderPipeline();
+            resolve(img);
+          };
+          img.onerror = () => reject(new Error("Failed to load solid canvas image"));
+          img.src = dataUrl;
+        } catch (e) {
+          reject(e);
+        }
       });
     },
     [renderPipeline]
@@ -441,6 +529,35 @@ export function useCanvas() {
     },
     [renderPipeline]
   );
+
+  const updateBackgroundEraser = useCallback(
+    (settings: BackgroundEraserSettings) => {
+      backgroundEraserRef.current = settings;
+      renderPipeline();
+    },
+    [renderPipeline]
+  );
+
+  /**
+   * Read a single pixel from the rendered canvas and return it as a #rrggbb
+   * string. Used by the Background Eraser color picker.
+   */
+  const sampleCanvasColor = useCallback((normX: number, normY: number): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+
+    const px = Math.min(canvas.width - 1, Math.max(0, Math.round(normX * canvas.width)));
+    const py = Math.min(canvas.height - 1, Math.max(0, Math.round(normY * canvas.height)));
+
+    const d = ctx.getImageData(px, py, 1, 1).data;
+    if (d[3] === 0) return null; // already keyed out, nothing to sample
+
+    const toHex = (n: number) => n.toString(16).padStart(2, "0");
+    return `#${toHex(d[0])}${toHex(d[1])}${toHex(d[2])}`;
+  }, []);
 
   /**
    * Full-resolution Master Export
@@ -509,36 +626,109 @@ export function useCanvas() {
         adj,
         filter,
         selectivePoints,
-        curves
+        curves,
+        toEraserParams(backgroundEraserRef.current)
       );
       expCtx.putImageData(imageData, 0, 0);
 
-      // Composite full-res layers
+      // Composite full-res layers with complete text styling effects
       const currentLayers = layersRef.current;
       for (let i = currentLayers.length - 1; i >= 0; i--) {
         const layer = currentLayers[i];
         if (!layer.visible) continue;
 
         if (layer.type === "text" && layer.textData) {
-          const t = layer.textData;
-          if (!t.visible) continue;
-          expCtx.save();
-          const family = t.fontFamily || "ui-monospace, monospace";
-          const normFraction = t.fontSize > 1 ? t.fontSize / 800 : t.fontSize;
-          const scaledFontSize = Math.max(10, Math.round(normFraction * cropH));
-          expCtx.font = `bold ${scaledFontSize}px ${family}`;
-          expCtx.fillStyle = t.color;
-          expCtx.textBaseline = "top";
-          const posX = t.x * cropW;
-          const posY = t.y * cropH;
-          expCtx.fillText(t.text, posX, posY);
-          expCtx.restore();
+          drawTextToCanvasCtx(
+            expCtx,
+            layer.textData,
+            cropW,
+            cropH,
+            canvasRef.current?.width || cropW
+          );
         }
       }
 
       return exportCanvas.toDataURL(format, quality);
     },
     []
+  );
+
+  /**
+   * Commit the currently rendered canvas snapshot as the new base original image.
+   * Flattens active presets / edits into the master image.
+   */
+  const commitCanvasAsBaseImage = useCallback((): Promise<HTMLImageElement | null> => {
+    return new Promise<HTMLImageElement | null>((resolve) => {
+      if (!canvasRef.current || !originalImageRef.current) {
+        resolve(null);
+        return;
+      }
+      const dataUrl = canvasRef.current.toDataURL("image/png");
+      const img = new Image();
+      img.onload = () => {
+        originalImageRef.current = img;
+        previewCanvasRef.current = null;
+        renderPipeline();
+        resolve(img);
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }, [renderPipeline]);
+
+  /**
+   * Bake a specific text layer directly into the base image pixels
+   */
+  const bakeTextLayerIntoBase = useCallback(
+    (textLayerId: string): Promise<{ newImage: HTMLImageElement; remainingLayers: LayerItem[] } | null> => {
+      return new Promise((resolve) => {
+        const img = originalImageRef.current;
+        if (!img) {
+          resolve(null);
+          return;
+        }
+        const textLayer = layersRef.current.find((l) => l.id === textLayerId && l.type === "text");
+        if (!textLayer || !textLayer.textData) {
+          resolve(null);
+          return;
+        }
+
+        const offscreen = document.createElement("canvas");
+        offscreen.width = img.naturalWidth || img.width;
+        offscreen.height = img.naturalHeight || img.height;
+        const ctx = offscreen.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+
+        // Draw current base image
+        ctx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
+
+        // Draw the text layer with full styling
+        drawTextToCanvasCtx(
+          ctx,
+          textLayer.textData,
+          offscreen.width,
+          offscreen.height,
+          canvasRef.current?.width || offscreen.width
+        );
+
+        const dataUrl = offscreen.toDataURL("image/png");
+        const newImg = new Image();
+        newImg.onload = () => {
+          originalImageRef.current = newImg;
+          previewCanvasRef.current = null;
+          const remaining = layersRef.current.filter((l) => l.id !== textLayerId);
+          layersRef.current = remaining;
+          renderPipeline();
+          resolve({ newImage: newImg, remainingLayers: remaining });
+        };
+        newImg.onerror = () => resolve(null);
+        newImg.src = dataUrl;
+      });
+    },
+    [renderPipeline]
   );
 
   useEffect(() => {
@@ -555,6 +745,9 @@ export function useCanvas() {
     beforeCanvasRef,
     originalImageRef,
     loadImage,
+    loadSolidCanvas,
+    commitCanvasAsBaseImage,
+    bakeTextLayerIntoBase,
     updateAdjustments,
     updateCurves,
     updateSelectivePoints,
@@ -562,6 +755,8 @@ export function useCanvas() {
     updateTransform,
     updateGridMode,
     updateLayers,
+    updateBackgroundEraser,
+    sampleCanvasColor,
     samplePixelWhiteBalance,
     exportImage,
     transformState: transformRef.current,
@@ -572,4 +767,85 @@ export function useCanvas() {
     gridMode: gridModeRef.current,
     renderPipeline,
   };
+}
+
+/**
+ * Composite a text layer onto a 2D canvas context with full styling
+ */
+function drawTextToCanvasCtx(
+  ctx: CanvasRenderingContext2D,
+  t: TextOverlay,
+  targetW: number,
+  targetH: number,
+  referenceW: number
+) {
+  if (!t.visible) return;
+  ctx.save();
+  const scale = targetW / (referenceW || targetW);
+  const scaledFontSize = Math.round(t.fontSize * scale);
+  const family = t.fontFamily || "sans-serif";
+  const weight = t.fontWeight || "bold";
+  ctx.font = `${weight} ${scaledFontSize}px ${family}`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = (t.textAlign as CanvasTextAlign) || "left";
+
+  const posX = t.x * targetW;
+  const posY = t.y * targetH;
+
+  ctx.translate(posX, posY);
+  if (t.rotation) {
+    ctx.rotate((t.rotation * Math.PI) / 180);
+  }
+  if (t.skewX || t.skewY) {
+    const radX = ((t.skewX || 0) * Math.PI) / 180;
+    const radY = ((t.skewY || 0) * Math.PI) / 180;
+    ctx.transform(1, Math.tan(radY), Math.tan(radX), 1, 0, 0);
+  }
+  if (t.opacity !== undefined) {
+    ctx.globalAlpha = t.opacity / 100;
+  }
+
+  // Draw Glow
+  if (t.glow) {
+    ctx.save();
+    ctx.shadowColor = t.glow.color;
+    ctx.shadowBlur = (t.glow.blur || 12) * scale;
+    ctx.fillStyle = t.glow.color;
+    ctx.fillText(t.text, 0, 0);
+    ctx.restore();
+  }
+
+  // Draw Drop Shadow
+  if (t.shadow) {
+    ctx.save();
+    ctx.shadowColor = t.shadow.color;
+    ctx.shadowOffsetX = (t.shadow.offsetX || 3) * scale;
+    ctx.shadowOffsetY = (t.shadow.offsetY || 3) * scale;
+    ctx.shadowBlur = (t.shadow.blur || 6) * scale;
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, 0, 0);
+    ctx.restore();
+  }
+
+  // Draw Outer Outline
+  if (t.outline) {
+    ctx.strokeStyle = t.outline.color;
+    ctx.lineWidth = (t.outline.width || 4) * scale;
+    ctx.lineJoin = "round";
+    ctx.strokeText(t.text, 0, 0);
+  }
+
+  // Draw Border / Stroke
+  if (t.stroke) {
+    ctx.strokeStyle = t.stroke.color;
+    ctx.lineWidth = (t.stroke.width || 2) * scale;
+    ctx.lineJoin = "round";
+    ctx.strokeText(t.text, 0, 0);
+  }
+
+  // Draw Main Text Fill
+  ctx.fillStyle = t.color;
+  ctx.fillText(t.text, 0, 0);
+
+  ctx.restore();
 }
