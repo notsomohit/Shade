@@ -286,6 +286,7 @@ interface CompactSliderProps {
   onChange: (val: number, commit?: boolean) => void;
   onCommit?: () => void;
   specialTrack?: "temperature" | "tint" | "bipolar" | "unipolar";
+  formatDisplay?: (value: number) => string;
 }
 
 function CompactSlider({
@@ -298,6 +299,7 @@ function CompactSlider({
   onChange,
   onCommit,
   specialTrack = "bipolar",
+  formatDisplay,
 }: CompactSliderProps) {
   const getTrackBackground = () => {
     if (specialTrack === "temperature") {
